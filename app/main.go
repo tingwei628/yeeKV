@@ -40,7 +40,7 @@ type SafeMap struct {
 
 type SafeList struct {
 	mu sync.Mutex
-	m  map[string]LinkedList
+	m  map[string]*LinkedList
 }
 
 func NewSafeMap() *SafeMap {
@@ -50,7 +50,7 @@ func NewSafeMap() *SafeMap {
 }
 func NewSafeList() *SafeList {
 	return &SafeList{
-		m: make(map[string]LinkedList),
+		m: make(map[string]*LinkedList),
 	}
 }
 
@@ -120,7 +120,7 @@ func (s *SafeList) RPush(key string, values ...string) int {
 		}
 	} else {
 		// If the key does not exist, create a new list and add the values
-		m = LinkedList{}
+		m = &LinkedList{}
 		for _, value := range values {
 			newItem := &ListItem{
 				ItemValue: Element{
@@ -172,7 +172,7 @@ func (s *SafeList) LPush(key string, values ...string) int {
 		}
 	} else {
 		// If the key does not exist, create a new list and add the values
-		m = LinkedList{}
+		m = &LinkedList{}
 		for _, value := range values {
 			newItem := &ListItem{
 				ItemValue: Element{
