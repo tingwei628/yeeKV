@@ -85,6 +85,8 @@ func handleConnection(conn net.Conn) {
 			readBulkCommand = false
 		}
 
+		fmt.Println("commands:", commands)
+
 		if len(commands) > 0 && len(commands) == command_count {
 			switch strings.ToUpper(commands[0]) {
 			case "PING":
