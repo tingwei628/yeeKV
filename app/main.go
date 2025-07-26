@@ -41,6 +41,7 @@ func main() {
 	}
 }
 
+// *2\r\n$4\r\nECHO\r\n$3\r\nhey\r\n
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
 
@@ -84,7 +85,7 @@ func handleConnection(conn net.Conn) {
 			readBulkCommand = false
 		}
 
-		if len(commands) == command_count {
+		if len(commands) > 0 && len(commands) == command_count {
 			switch strings.ToUpper(commands[0]) {
 			case "PING":
 				conn.Write([]byte("+PONG\r\n"))
@@ -102,6 +103,8 @@ func handleConnection(conn net.Conn) {
 			readBulkCommand = false
 			commands = nil
 			command_count = 0
+
+		} else {
 
 		}
 
