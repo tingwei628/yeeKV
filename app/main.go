@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"net"
 	"os"
+	"strings"
 )
 
 // Ensures gofmt doesn't remove the "net" and "os" imports in stage 1 (feel free to remove this!)
@@ -21,11 +23,41 @@ func main() {
 		fmt.Println("Failed to bind to port 6379")
 		os.Exit(1)
 	}
-	conn, err := l.Accept()
-	if err != nil {
-		fmt.Println("Error accepting connection: ", err.Error())
-		os.Exit(1)
-	}
-	conn.Write([]byte("+PONG\r\n"))
 
+	defer l.Close()
+
+	for {
+		// Accept connections in a loop
+		conn, err := l.Accept()
+		if err != nil {
+			fmt.Println("Error accepting connection: ", err.Error())
+			// os.Exit(1)
+			continue // Continue to accept new connections even if one fails
+		}
+
+		// Handle the connection
+		handleConnection(conn)
+	}
+}
+
+func handleConnection(conn net.Conn) {
+	defer conn.Close()
+
+	// buf := make([]byte, 1024)
+	// _, err := conn.Read(buf)
+	// if err != nil {
+	// 	fmt.Println("Error reading from connection: ", err.Error())
+	// 	return
+	// }
+	scanner := bufio.NewScanner(conn)
+	for scanner.Scan() {
+		command := scanner.Text()
+		if strings.TrimSpace(command) == "PING" {
+			// handlePing(conn)
+			conn.Write([]byte("+PONG\r\n"))
+		} else {
+			// fmt.Println("Unknown command:", command)
+			// conn.Write([]byte("-ERR unknown command\r\n"))
+		}
+	}
 }
