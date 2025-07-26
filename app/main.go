@@ -194,10 +194,59 @@ func (s *SafeList) LPush(key string, values ...string) int {
 	return m.Len
 }
 
-// func (s *SafeList) LRange(start, end int) int {
-// 	s.mu.Lock()
-// 	defer s.mu.Unlock()
-// }
+func (s *SafeList) LRange(key string, start, stop int) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var result []string
+
+	m, ok := s.m[key]
+	if ok {
+
+		// Return empty slice if the list is empty
+		if m.Len == 0 {
+			return result
+		}
+
+		// Adjust start and stop indices if they are negative
+		if start < 0 {
+			start = m.Len + start
+		}
+		if start < 0 {
+			start = 0
+		}
+
+		if stop < 0 {
+			stop = m.Len + stop
+		}
+		if stop < 0 {
+			stop = 0
+		}
+
+		// start and stop are positives now
+		// Ensure start and stop are within bounds
+		if start >= m.Len || start > stop {
+			return result
+		}
+
+		if stop > m.Len {
+			stop = m.Len - 1
+		}
+
+		current := m.Head
+		index := 0
+
+		for current != nil {
+			if index >= start && index <= stop {
+				result = append(result, current.ItemValue.Value)
+			}
+			current = current.Next
+			index++
+		}
+	}
+	return result
+
+}
 
 // Ensures gofmt doesn't remove the "net" and "os" imports in stage 1 (feel free to remove this!)
 var _ = net.Listen
@@ -320,10 +369,31 @@ func handleConnection(conn net.Conn) {
 			case "RPUSH":
 				if len(commands) >= 3 {
 					v := safeList.RPush(commands[1], commands[2:]...)
-					fmt.Println("RPUSH %v %v %v", commands[1], commands[2:], v)
 					conn.Write([]byte(fmt.Sprintf(":%d\r\n", v)))
 				} else {
 					// conn.Write([]byte("-ERR wrong number of arguments for 'rpush' command\r\n"))
+				}
+			case "LRANGE":
+				if len(commands) == 4 {
+					start, err := strconv.Atoi(commands[2])
+					stop, err := strconv.Atoi(commands[3])
+					if err != nil {
+						conn.Write([]byte("-ERR invalid start index or end index\r\n"))
+					}
+
+					v := safeList.LRange(commands[1], start, stop)
+					v_len := len(v)
+
+					stringBuilder := strings.Builder{}
+					stringBuilder.WriteString(fmt.Sprintf("*%d\r\n", v_len))
+
+					for _, value := range v {
+						stringBuilder.WriteString(fmt.Sprintf("$%d\r\n%s\r\n", len(value), value))
+					}
+					conn.Write([]byte(stringBuilder.String()))
+
+				} else {
+					// conn.Write([]byte("-ERR wrong number of arguments for 'lrange' command\r\n"))
 				}
 			default:
 				conn.Write([]byte("-ERR unknown command\r\n"))
