@@ -86,6 +86,8 @@ func handleConnection(conn net.Conn) {
 		}
 
 		fmt.Println("commands:", commands)
+		fmt.Println("command_count:", command_count)
+		fmt.Println(len(commands) == command_count)
 
 		if len(commands) > 0 && len(commands) == command_count {
 			switch strings.ToUpper(commands[0]) {
