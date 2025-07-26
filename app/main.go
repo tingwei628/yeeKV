@@ -320,6 +320,7 @@ func handleConnection(conn net.Conn) {
 			case "RPUSH":
 				if len(commands) >= 3 {
 					v := safeList.RPush(commands[1], commands[2:]...)
+					fmt.Println("RPUSH %v %v %v", commands[1], commands[2:], v)
 					conn.Write([]byte(fmt.Sprintf(":%d\r\n", v)))
 				} else {
 					// conn.Write([]byte("-ERR wrong number of arguments for 'rpush' command\r\n"))
