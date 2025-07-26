@@ -434,17 +434,16 @@ func handleConnection(conn net.Conn) {
 						}
 					}
 					v, ok := safeList.LPop(commands[1], popCount)
-					if ok {
-						if len(v) > 0 {
+					if ok && len(v) > 0 {
+						if popCount == 1 {
+							conn.Write([]byte(fmt.Sprintf("$%d\r\n%s\r\n", len(v[0]), v[0])))
+						} else {
 							stringBuilder := strings.Builder{}
 							stringBuilder.WriteString(fmt.Sprintf("*%d\r\n", len(v)))
 							for _, value := range v {
 								stringBuilder.WriteString(fmt.Sprintf("$%d\r\n%s\r\n", len(value), value))
 							}
 							conn.Write([]byte(stringBuilder.String()))
-
-						} else {
-							conn.Write([]byte("$-1\r\n")) // nil response for empty list
 						}
 					} else {
 						conn.Write([]byte("$-1\r\n")) // nil response for non-existing key or empty list
