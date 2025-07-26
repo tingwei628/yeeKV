@@ -424,11 +424,14 @@ func handleConnection(conn net.Conn) {
 					// conn.Write([]byte("-ERR wrong number of arguments for 'lpush' command\r\n"))
 				}
 			case "LPOP":
-				if len(commands) == 3 {
-					popCount, err := strconv.Atoi(commands[2])
-					if err != nil {
-						conn.Write([]byte("-ERR invalid popCount\r\n"))
-						continue
+				if len(commands) >= 2 {
+					popCount := 1
+					if len(commands) == 3 {
+						popCount, err = strconv.Atoi(commands[2])
+						if err != nil {
+							conn.Write([]byte("-ERR invalid popCount\r\n"))
+							continue
+						}
 					}
 					v, ok := safeList.LPop(commands[1], popCount)
 					if ok {
