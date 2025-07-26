@@ -193,6 +193,36 @@ func (s *SafeList) LPush(key string, values ...string) int {
 	}
 	return m.Len
 }
+func (s *SafeList) LPop(key string, popCount int) ([]string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	m, ok := s.m[key]
+	var result []string
+
+	if ok && m.Len > 0 {
+
+		for i := 0; i < popCount && m.Len > 0; i++ {
+
+			value := m.Head.ItemValue.Value
+			result = append(result, value)
+
+			// Move the head pointer to the next item
+			m.Head = m.Head.Next
+			// If the list becomes empty, set Tail to nil
+			if m.Head == nil {
+				m.Tail = nil
+			} else {
+				m.Head.Prev = nil // Set the Prev pointer of the new head to nil
+			}
+
+			m.Len--
+		}
+
+		return result, true
+	}
+	return result, false // Return empty string if the list is empty or key does not exist
+}
 
 func (s *SafeList) LRange(key string, start, stop int) []string {
 	s.mu.Lock()
@@ -359,6 +389,7 @@ func handleConnection(conn net.Conn) {
 					px, err := strconv.ParseInt(commands[4], 10, 64)
 					if err != nil {
 						conn.Write([]byte("-ERR invalid PX value\r\n"))
+						continue
 					}
 					safeMap.Set(commands[1], commands[2], px)
 					conn.Write([]byte("+OK\r\n"))
@@ -392,12 +423,39 @@ func handleConnection(conn net.Conn) {
 				} else {
 					// conn.Write([]byte("-ERR wrong number of arguments for 'lpush' command\r\n"))
 				}
+			case "LPOP":
+				if len(commands) == 3 {
+					popCount, err := strconv.Atoi(commands[2])
+					if err != nil {
+						conn.Write([]byte("-ERR invalid popCount\r\n"))
+						continue
+					}
+					v, ok := safeList.LPop(commands[1], popCount)
+					if ok {
+						if len(v) > 0 {
+							stringBuilder := strings.Builder{}
+							stringBuilder.WriteString(fmt.Sprintf("*%d\r\n", len(v)))
+							for _, value := range v {
+								stringBuilder.WriteString(fmt.Sprintf("$%d\r\n%s\r\n", len(value), value))
+							}
+							conn.Write([]byte(stringBuilder.String()))
+
+						} else {
+							conn.Write([]byte("$-1\r\n")) // nil response for empty list
+						}
+					} else {
+						conn.Write([]byte("$-1\r\n")) // nil response for non-existing key or empty list
+					}
+				} else {
+					// conn.Write([]byte("-ERR wrong number of arguments for 'lpop' command\r\n"))
+				}
 			case "LRANGE":
 				if len(commands) == 4 {
 					start, err := strconv.Atoi(commands[2])
 					stop, err := strconv.Atoi(commands[3])
 					if err != nil {
 						conn.Write([]byte("-ERR invalid start index or end index\r\n"))
+						continue
 					}
 
 					v := safeList.LRange(commands[1], start, stop)
