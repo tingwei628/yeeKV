@@ -90,18 +90,19 @@ func (s *SafeMap) Get(key string) (string, bool) {
 	return "", false
 }
 
-func (s *SafeList) RPush(key string, values ...string) {
+func (s *SafeList) RPush(key string, values ...string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for _, value := range values {
-		newItem := &ListItem{
-			ItemValue: Element{
-				Value: value,
-			},
-		}
-		m, ok := s.m[key]
-		if ok {
+	m, ok := s.m[key]
+	if ok {
+		for _, value := range values {
+			newItem := &ListItem{
+				ItemValue: Element{
+					Value: value,
+				},
+			}
+
 			// If the list is empty, set both Head and Tail to the new item
 			if m.Head == nil {
 				m.Head = newItem
@@ -115,22 +116,26 @@ func (s *SafeList) RPush(key string, values ...string) {
 				m.Tail = newItem
 			}
 			m.Len++
+
 		}
+		return m.Len
 	}
+	return 0
 }
 
-func (s *SafeList) LPush(key string, values ...string) {
+func (s *SafeList) LPush(key string, values ...string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, value := range values {
-		newItem := &ListItem{
-			ItemValue: Element{
-				Value: value,
-			},
-		}
 
-		m, ok := s.m[key]
-		if ok {
+	m, ok := s.m[key]
+	if ok {
+		for _, value := range values {
+			newItem := &ListItem{
+				ItemValue: Element{
+					Value: value,
+				},
+			}
+
 			// If the list is empty, set both Head and Tail to the new item
 			if m.Head == nil {
 				m.Head = newItem
@@ -145,8 +150,9 @@ func (s *SafeList) LPush(key string, values ...string) {
 			}
 			m.Len++
 		}
-
+		return m.Len
 	}
+	return 0
 }
 
 // func (s *SafeList) LRange(start, end int) int {
@@ -271,6 +277,13 @@ func handleConnection(conn net.Conn) {
 					}
 				} else {
 					// conn.Write([]byte("-ERR wrong number of arguments for 'get' command\r\n"))
+				}
+			case "RPUSH":
+				if len(commands) >= 3 {
+					v := safeList.RPush(commands[1], commands[2:]...)
+					conn.Write([]byte(fmt.Sprintf(": %d\r\n", v)))
+				} else {
+					// conn.Write([]byte("-ERR wrong number of arguments for 'rpush' command\r\n"))
 				}
 			default:
 				conn.Write([]byte("-ERR unknown command\r\n"))
