@@ -41,7 +41,6 @@ func main() {
 	}
 }
 
-// *2\r\n$4\r\nECHO\r\n$3\r\nhey\r\n
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
 
@@ -54,7 +53,7 @@ func handleConnection(conn net.Conn) {
 	for scanner.Scan() {
 		text := scanner.Text()
 
-		fmt.Printf("Received: %q\n", text)
+		// fmt.Printf("Received: %q\n", text)
 
 		// Handle the command
 		text = strings.TrimSpace(text)
@@ -72,7 +71,6 @@ func handleConnection(conn net.Conn) {
 				conn.Write([]byte("-ERR empty command\r\n"))
 				continue
 			}
-			fmt.Println("command_count: (1)", command_count)
 			commands = make([]string, 0, command_count)
 
 		} else if strings.HasPrefix(text, "$") {
@@ -85,11 +83,7 @@ func handleConnection(conn net.Conn) {
 			readBulkCommand = false
 		}
 
-		fmt.Println("commands:", commands)
-		fmt.Println("command_count: (2)", command_count)
-		fmt.Println(len(commands) == command_count)
-
-		if len(commands) > 0 && len(commands) == command_count {
+		if len(commands) == command_count {
 			switch strings.ToUpper(commands[0]) {
 			case "PING":
 				conn.Write([]byte("+PONG\r\n"))
