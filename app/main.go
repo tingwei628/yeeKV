@@ -1,3 +1,8 @@
+/*
+todo: add more func() return error
+todo: separate more data structures into small packages
+todo: setup goroutine with a workpool
+*/
 package main
 
 import (
@@ -11,19 +16,41 @@ import (
 	"time"
 )
 
-type SafeMap struct {
-	mu sync.Mutex
-	m  map[string]SafeValue
-}
-
-type SafeValue struct {
+type Element struct {
 	Value      string
 	ExpiryTime time.Time
 }
 
+type ListItem struct {
+	ItemValue Element
+	Prev      *ListItem
+	Next      *ListItem
+}
+
+type LinkedList struct {
+	Head *ListItem
+	Tail *ListItem
+	Len  int
+}
+
+type SafeMap struct {
+	mu sync.Mutex
+	m  map[string]Element
+}
+
+type SafeList struct {
+	mu sync.Mutex
+	m  map[string]LinkedList
+}
+
 func NewSafeMap() *SafeMap {
 	return &SafeMap{
-		m: make(map[string]SafeValue),
+		m: make(map[string]Element),
+	}
+}
+func NewSafeList() *SafeList {
+	return &SafeList{
+		m: make(map[string]LinkedList),
 	}
 }
 
@@ -33,16 +60,15 @@ func (s *SafeMap) Set(key string, value string, px int64) {
 	if px > 0 {
 		expiryTime := time.Now().Add(time.Duration(px) * time.Millisecond)
 
-		s.m[key] = SafeValue{
+		s.m[key] = Element{
 			Value:      value,
 			ExpiryTime: expiryTime,
 		}
 	} else {
-		s.m[key] = SafeValue{
+		s.m[key] = Element{
 			Value: value,
 		}
 	}
-
 }
 
 func (s *SafeMap) Get(key string) (string, bool) {
@@ -61,14 +87,78 @@ func (s *SafeMap) Get(key string) (string, bool) {
 		// Key exists without expiry
 		return s.m[key].Value, true
 	}
-
 	return "", false
 }
+
+func (s *SafeList) RPush(key string, values ...string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, value := range values {
+		newItem := &ListItem{
+			ItemValue: Element{
+				Value: value,
+			},
+		}
+		m, ok := s.m[key]
+		if ok {
+			// If the list is empty, set both Head and Tail to the new item
+			if m.Head == nil {
+				m.Head = newItem
+				m.Tail = newItem
+			} else {
+				// If the list is not empty, append the new item to the tail
+				m.Tail.Next = newItem
+				// Set the Prev pointer of the new item to the current tail
+				newItem.Prev = m.Tail
+				// Update the tail to point to the new item
+				m.Tail = newItem
+			}
+			m.Len++
+		}
+	}
+}
+
+func (s *SafeList) LPush(key string, values ...string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, value := range values {
+		newItem := &ListItem{
+			ItemValue: Element{
+				Value: value,
+			},
+		}
+
+		m, ok := s.m[key]
+		if ok {
+			// If the list is empty, set both Head and Tail to the new item
+			if m.Head == nil {
+				m.Head = newItem
+				m.Tail = newItem
+			} else {
+				// If the list is not empty, prepend the new item to the head
+				newItem.Next = m.Head
+				// Set the Prev pointer of the current head to the new item
+				m.Head.Prev = newItem
+				// Update the head to point to the new item
+				m.Head = newItem
+			}
+			m.Len++
+		}
+
+	}
+}
+
+// func (s *SafeList) LRange(start, end int) int {
+// 	s.mu.Lock()
+// 	defer s.mu.Unlock()
+// }
 
 // Ensures gofmt doesn't remove the "net" and "os" imports in stage 1 (feel free to remove this!)
 var _ = net.Listen
 var _ = os.Exit
 var safeMap *SafeMap
+var safeList *SafeList
 
 const NEVER_EXPIRED = -1
 
@@ -85,6 +175,7 @@ func main() {
 	}
 
 	safeMap = NewSafeMap()
+	safeList = NewSafeList()
 
 	defer l.Close()
 
