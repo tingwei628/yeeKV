@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -44,6 +45,11 @@ func handleConnection(conn net.Conn) {
 	defer conn.Close()
 
 	scanner := bufio.NewScanner(conn)
+
+	var commands []string
+	var readBulkCommand bool
+	var command_count int
+
 	for scanner.Scan() {
 		text := scanner.Text()
 
@@ -51,22 +57,53 @@ func handleConnection(conn net.Conn) {
 
 		// Handle the command
 		text = strings.TrimSpace(text)
-		commands := strings.Split(text, " ")
-		len_args := len(commands)
-		if len_args > 1 {
-			if strings.EqualFold(commands[0], "ECHO") {
-				conn.Write([]byte(fmt.Sprintf("$%d\r\n%s\r\n", len(commands[1]), commands[1])))
+
+		if strings.HasPrefix(text, "*") {
+
+			command_count, err := strconv.Atoi(text[1:])
+
+			if err != nil {
+				conn.Write([]byte("-ERR invalid number of arguments\r\n"))
 				continue
 			}
 
+			if command_count == 0 {
+				conn.Write([]byte("-ERR empty command\r\n"))
+				continue
+			}
+
+			commands = make([]string, 0, command_count)
+
+		} else if strings.HasPrefix(text, "$") {
+			readBulkCommand = true
 			continue
 		}
-		if strings.EqualFold(commands[0], "PING") {
-			// handlePing(conn)
-			conn.Write([]byte("+PONG\r\n"))
-		} else {
-			// fmt.Println("Unknown command:", command)
-			// conn.Write([]byte("-ERR unknown command\r\n"))
+
+		if readBulkCommand {
+			commands = append(commands, text)
+			readBulkCommand = false
 		}
+
+		if len(commands) == command_count {
+			switch strings.ToUpper(commands[0]) {
+			case "PING":
+				conn.Write([]byte("+PONG\r\n"))
+			case "ECHO":
+				if len(commands) >= 2 {
+					conn.Write([]byte(fmt.Sprintf("$%d\r\n%s\r\n", len(commands[1]), commands[1])))
+				}
+				// } else {
+				// 	conn.Write([]byte("-ERR wrong number of arguments for 'echo' command\r\n"))
+				// }
+			default:
+				conn.Write([]byte("-ERR unknown command\r\n"))
+			}
+
+			readBulkCommand = false
+			commands = nil
+			command_count = 0
+
+		}
+
 	}
 }
