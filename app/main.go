@@ -72,7 +72,7 @@ func handleConnection(conn net.Conn) {
 				conn.Write([]byte("-ERR empty command\r\n"))
 				continue
 			}
-
+			fmt.Println("command_count: (1)", command_count)
 			commands = make([]string, 0, command_count)
 
 		} else if strings.HasPrefix(text, "$") {
@@ -86,7 +86,7 @@ func handleConnection(conn net.Conn) {
 		}
 
 		fmt.Println("commands:", commands)
-		fmt.Println("command_count:", command_count)
+		fmt.Println("command_count: (2)", command_count)
 		fmt.Println(len(commands) == command_count)
 
 		if len(commands) > 0 && len(commands) == command_count {
