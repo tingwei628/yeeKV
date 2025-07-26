@@ -248,6 +248,17 @@ func (s *SafeList) LRange(key string, start, stop int) []string {
 
 }
 
+func (s *SafeList) LLen(key string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	m, ok := s.m[key]
+	if ok {
+		return m.Len
+	}
+	return 0 // Return 0 if the key does not exist
+}
+
 // Ensures gofmt doesn't remove the "net" and "os" imports in stage 1 (feel free to remove this!)
 var _ = net.Listen
 var _ = os.Exit
@@ -373,6 +384,14 @@ func handleConnection(conn net.Conn) {
 				} else {
 					// conn.Write([]byte("-ERR wrong number of arguments for 'rpush' command\r\n"))
 				}
+			case "LPUSH":
+				if len(commands) >= 3 {
+					v := safeList.LPush(commands[1], commands[2:]...)
+					conn.Write([]byte(fmt.Sprintf(":%d\r\n", v)))
+
+				} else {
+					// conn.Write([]byte("-ERR wrong number of arguments for 'lpush' command\r\n"))
+				}
 			case "LRANGE":
 				if len(commands) == 4 {
 					start, err := strconv.Atoi(commands[2])
@@ -394,6 +413,13 @@ func handleConnection(conn net.Conn) {
 
 				} else {
 					// conn.Write([]byte("-ERR wrong number of arguments for 'lrange' command\r\n"))
+				}
+			case "LLEN":
+				if len(commands) == 2 {
+					v := safeList.LLen(commands[1])
+					conn.Write([]byte(fmt.Sprintf(":%d\r\n", v)))
+				} else {
+					// conn.Write([]byte("-ERR wrong number of arguments for 'llen' command\r\n"))
 				}
 			default:
 				conn.Write([]byte("-ERR unknown command\r\n"))
