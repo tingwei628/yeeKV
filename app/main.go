@@ -35,23 +35,20 @@ func main() {
 			continue // Continue to accept new connections even if one fails
 		}
 
-		// Handle the connection
-		handleConnection(conn)
+		// goroutine to handle multiple connections at the same time
+		go handleConnection(conn)
 	}
 }
 
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
 
-	// buf := make([]byte, 1024)
-	// _, err := conn.Read(buf)
-	// if err != nil {
-	// 	fmt.Println("Error reading from connection: ", err.Error())
-	// 	return
-	// }
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
 		command := scanner.Text()
+
+		fmt.Printf("Received: %q\n", command)
+
 		if strings.TrimSpace(command) == "PING" {
 			// handlePing(conn)
 			conn.Write([]byte("+PONG\r\n"))
