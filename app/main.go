@@ -50,7 +50,7 @@ func handleConnection(conn net.Conn) {
 	var commands []string
 	var readBulkCommand bool
 	var command_count int
-
+	var err error
 	for scanner.Scan() {
 		text := scanner.Text()
 
@@ -61,7 +61,7 @@ func handleConnection(conn net.Conn) {
 
 		if strings.HasPrefix(text, "*") {
 
-			command_count, err := strconv.Atoi(text[1:])
+			command_count, err = strconv.Atoi(text[1:])
 
 			if err != nil {
 				conn.Write([]byte("-ERR invalid number of arguments\r\n"))
