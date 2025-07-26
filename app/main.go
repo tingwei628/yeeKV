@@ -7,15 +7,47 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 )
+
+type SafeMap struct {
+	mu sync.Mutex
+	m  map[string]string
+}
+
+func NewSafeMap() *SafeMap {
+	return &SafeMap{
+		m: make(map[string]string),
+	}
+}
+
+func (s *SafeMap) Set(key, value string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.m[key] = value
+}
+
+func (s *SafeMap) Get(key string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	value, ok := s.m[key]
+	return value, ok
+}
+
+func (s *SafeMap) Delete(key string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.m, key)
+}
 
 // Ensures gofmt doesn't remove the "net" and "os" imports in stage 1 (feel free to remove this!)
 var _ = net.Listen
 var _ = os.Exit
+var safeMap *SafeMap
 
 func main() {
 	// You can use print statements as follows for debugging, they'll be visible when running tests.
-	fmt.Println("Logs from your program will appear here!")
+	// fmt.Println("Logs from your program will appear here!")
 
 	// Uncomment this block to pass the first stage
 
@@ -24,6 +56,8 @@ func main() {
 		fmt.Println("Failed to bind to port 6379")
 		os.Exit(1)
 	}
+
+	safeMap = NewSafeMap()
 
 	defer l.Close()
 
@@ -94,6 +128,24 @@ func handleConnection(conn net.Conn) {
 				// } else {
 				// 	conn.Write([]byte("-ERR wrong number of arguments for 'echo' command\r\n"))
 				// }
+			case "SET":
+				if len(commands) >= 3 {
+					safeMap.Set(commands[1], commands[2])
+					conn.Write([]byte("+OK\r\n"))
+				} else {
+					// conn.Write([]byte("-ERR wrong number of arguments for 'set' command\r\n"))
+				}
+			case "GET":
+				if len(commands) >= 2 {
+					value, ok := safeMap.Get(commands[1])
+					if ok {
+						conn.Write([]byte(fmt.Sprintf("$%d\r\n%s\r\n", len(value), value)))
+					} else {
+						conn.Write([]byte("$-1\r\n")) // nil response for non-existing key
+					}
+				} else {
+					// conn.Write([]byte("-ERR wrong number of arguments for 'get' command\r\n"))
+				}
 			default:
 				conn.Write([]byte("-ERR unknown command\r\n"))
 			}
