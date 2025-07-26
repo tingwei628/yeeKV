@@ -118,9 +118,29 @@ func (s *SafeList) RPush(key string, values ...string) int {
 			m.Len++
 
 		}
-		return m.Len
+	} else {
+		// If the key does not exist, create a new list and add the values
+		m = LinkedList{}
+		for _, value := range values {
+			newItem := &ListItem{
+				ItemValue: Element{
+					Value: value,
+				},
+			}
+			if m.Head == nil {
+				m.Head = newItem
+				m.Tail = newItem
+			} else {
+				m.Tail.Next = newItem
+				newItem.Prev = m.Tail
+				m.Tail = newItem
+			}
+			m.Len++
+		}
+		s.m[key] = m
 	}
-	return 0
+
+	return m.Len
 }
 
 func (s *SafeList) LPush(key string, values ...string) int {
@@ -150,9 +170,28 @@ func (s *SafeList) LPush(key string, values ...string) int {
 			}
 			m.Len++
 		}
-		return m.Len
+	} else {
+		// If the key does not exist, create a new list and add the values
+		m = LinkedList{}
+		for _, value := range values {
+			newItem := &ListItem{
+				ItemValue: Element{
+					Value: value,
+				},
+			}
+			if m.Head == nil {
+				m.Head = newItem
+				m.Tail = newItem
+			} else {
+				newItem.Next = m.Head
+				m.Head.Prev = newItem
+				m.Head = newItem
+			}
+			m.Len++
+		}
+		s.m[key] = m
 	}
-	return 0
+	return m.Len
 }
 
 // func (s *SafeList) LRange(start, end int) int {
