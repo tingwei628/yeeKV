@@ -13,7 +13,7 @@ import (
 
 type SafeMap struct {
 	mu sync.Mutex
-	m  map[string]SafeKeyValue
+	m  map[string]SafeValue
 }
 
 type SafeValue struct {
