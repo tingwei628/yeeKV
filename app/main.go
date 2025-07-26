@@ -8,42 +8,69 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 type SafeMap struct {
 	mu sync.Mutex
-	m  map[string]string
+	m  map[string]SafeKeyValue
+}
+
+type SafeValue struct {
+	Value      string
+	ExpiryTime time.Time
 }
 
 func NewSafeMap() *SafeMap {
 	return &SafeMap{
-		m: make(map[string]string),
+		m: make(map[string]SafeValue),
 	}
 }
 
-func (s *SafeMap) Set(key, value string) {
+func (s *SafeMap) Set(key string, value string, px int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.m[key] = value
+	if px > 0 {
+		expiryTime := time.Now().Add(time.Duration(px) * time.Millisecond)
+
+		s.m[key] = SafeValue{
+			Value:      value,
+			ExpiryTime: expiryTime,
+		}
+	} else {
+		s.m[key] = SafeValue{
+			Value: value,
+		}
+	}
+
 }
 
 func (s *SafeMap) Get(key string) (string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	value, ok := s.m[key]
-	return value, ok
-}
+	v, ok := s.m[key]
+	if ok && !v.ExpiryTime.IsZero() {
+		if time.Now().After(v.ExpiryTime) {
+			delete(s.m, key)
+			return "", false // Key has expired
+		}
+		return s.m[key].Value, true
+	}
 
-func (s *SafeMap) Delete(key string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.m, key)
+	if ok && v.ExpiryTime.IsZero() {
+		// Key exists without expiry
+		return s.m[key].Value, true
+	}
+
+	return "", false
 }
 
 // Ensures gofmt doesn't remove the "net" and "os" imports in stage 1 (feel free to remove this!)
 var _ = net.Listen
 var _ = os.Exit
 var safeMap *SafeMap
+
+const NEVER_EXPIRED = -1
 
 func main() {
 	// You can use print statements as follows for debugging, they'll be visible when running tests.
@@ -129,9 +156,17 @@ func handleConnection(conn net.Conn) {
 				// 	conn.Write([]byte("-ERR wrong number of arguments for 'echo' command\r\n"))
 				// }
 			case "SET":
-				if len(commands) >= 3 {
-					safeMap.Set(commands[1], commands[2])
+				if len(commands) == 3 {
+					safeMap.Set(commands[1], commands[2], NEVER_EXPIRED)
 					conn.Write([]byte("+OK\r\n"))
+				} else if len(commands) == 5 && strings.ToUpper(commands[3]) == "PX" {
+					px, err := strconv.ParseInt(commands[4], 10, 64)
+					if err != nil {
+						conn.Write([]byte("-ERR invalid PX value\r\n"))
+					}
+					safeMap.Set(commands[1], commands[2], px)
+					conn.Write([]byte("+OK\r\n"))
+
 				} else {
 					// conn.Write([]byte("-ERR wrong number of arguments for 'set' command\r\n"))
 				}
