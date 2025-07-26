@@ -45,11 +45,23 @@ func handleConnection(conn net.Conn) {
 
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
-		command := scanner.Text()
+		text := scanner.Text()
 
-		fmt.Printf("Received: %q\n", command)
+		fmt.Printf("Received: %q\n", text)
 
-		if strings.TrimSpace(command) == "PING" {
+		// Handle the command
+		text = strings.TrimSpace(text)
+		commands := strings.Split(text, " ")
+		len_args := len(commands)
+		if len_args > 1 {
+			if strings.EqualFold(commands[0], "ECHO") {
+				conn.Write([]byte(fmt.Sprintf("+%s\r\n", commands[1])))
+				continue
+			}
+
+			continue
+		}
+		if strings.EqualFold(commands[0], "PING") {
 			// handlePing(conn)
 			conn.Write([]byte("+PONG\r\n"))
 		} else {
