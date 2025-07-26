@@ -55,7 +55,7 @@ func handleConnection(conn net.Conn) {
 		len_args := len(commands)
 		if len_args > 1 {
 			if strings.EqualFold(commands[0], "ECHO") {
-				conn.Write([]byte(fmt.Sprintf("+%s\r\n", commands[1])))
+				conn.Write([]byte(fmt.Sprintf("$%d\r\n%s\r\n", len(commands[1]), commands[1])))
 				continue
 			}
 
