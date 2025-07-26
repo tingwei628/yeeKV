@@ -116,7 +116,7 @@ func (s *SafeList) RPush(key string, values ...string) int {
 				m.Tail = newItem
 			}
 			m.Len++
-
+			fmt.Println("RPush: ", key, value, m.Len)
 		}
 	} else {
 		// If the key does not exist, create a new list and add the values
