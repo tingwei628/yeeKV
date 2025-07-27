@@ -399,7 +399,10 @@ func (s *SafeMap) Type(key string) (string, bool) {
 	return "string", true // Assuming all values in SafeMap are strings
 }
 
-func (s *SafeStream) XAdd(key string, fields map[string]interface{}) string {
+func isValidStreamID(id string) bool {
+	return true
+}
+func (s *SafeStream) XAdd(key string, id string, fields map[string]interface{}) (string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -410,7 +413,12 @@ func (s *SafeStream) XAdd(key string, fields map[string]interface{}) string {
 	}
 
 	// Create a new StreamItem with a unique ID
-	id := fmt.Sprintf("%d-%d", time.Now().UnixMilli(), len(s.m[key].Items))
+	if id == "*" {
+		id = fmt.Sprintf("%d-%d", time.Now().UnixMilli(), len(s.m[key].Items))
+	} else if !isValidStreamID(id) {
+		return "", false // Invalid ID format
+	}
+
 	item := StreamItem{
 		Id:     id,
 		Fields: make(map[string]StreamElement),
@@ -421,7 +429,7 @@ func (s *SafeStream) XAdd(key string, fields map[string]interface{}) string {
 	}
 
 	stream.Items = append(stream.Items, item)
-	return id
+	return id, true
 }
 
 // Ensures gofmt doesn't remove the "net" and "os" imports in stage 1 (feel free to remove this!)
@@ -649,11 +657,11 @@ func handleConnection(conn net.Conn) {
 					// conn.Write([]byte("-ERR wrong number of arguments for 'type' command\r\n"))
 				}
 			case "XADD":
-				if len(commands) >= 3 {
+				if len(commands) >= 5 {
 
 					fields := make(map[string]interface{})
 
-					for i := 2; i < len(commands); i += 2 {
+					for i := 3; i < len(commands); i += 2 {
 						if i+1 < len(commands) {
 							fields[commands[i]] = commands[i+1]
 						} else {
@@ -662,11 +670,11 @@ func handleConnection(conn net.Conn) {
 						}
 					}
 
-					id := safeStream.XAdd(commands[1], fields)
-					if id != "" {
+					id, ok := safeStream.XAdd(commands[1], commands[2], fields)
+					if ok {
 						conn.Write([]byte(fmt.Sprintf("$%d\r\n%s\r\n", len(id), id)))
 					} else {
-						conn.Write([]byte("-ERR failed to add item to stream\r\n"))
+						conn.Write([]byte("-ERR invalid stream ID format\r\n"))
 					}
 				} else {
 					// conn.Write([]byte("-ERR wrong number of arguments for 'xadd' command\r\n"))
