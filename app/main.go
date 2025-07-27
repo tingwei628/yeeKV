@@ -8,7 +8,6 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"net"
 	"os"
@@ -236,17 +235,17 @@ func (s *SafeList) LPop(key string, popCount int) ([]string, bool) {
 // BLPop blocks until an item is available in the list or the timeout is reached.
 func (s *SafeList) BLPop(key string, timeout time.Duration) (string, bool) {
 
-	var (
-		ctx    context.Context
-		cancel context.CancelFunc
-	)
+	// var (
+	// 	ctx    context.Context
+	// 	cancel context.CancelFunc
+	// )
 
-	if timeout > 0 {
-		ctx, cancel = context.WithTimeout(context.Background(), timeout)
-		defer cancel()
-	} else {
-		ctx = context.Background()
-	}
+	// if timeout > 0 {
+	// 	ctx, cancel = context.WithTimeout(context.Background(), timeout)
+	// 	defer cancel()
+	// } else {
+	// 	ctx = context.Background()
+	// }
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -270,18 +269,19 @@ func (s *SafeList) BLPop(key string, timeout time.Duration) (string, bool) {
 			return value, true
 		}
 
-		if timeout > 0 {
-			select {
-			case <-ctx.Done():
-				return "", false // Return empty string if timeout is reached
-			default:
-				// Wait for a signal that an item has been added to the list
-				s.cond.Wait()
-			}
-		} else {
-			// If no timeout is set, wait indefinitely for an item to be added
-			s.cond.Wait()
-		}
+		s.cond.Wait()
+		// if timeout > 0 {
+		// 	select {
+		// 	case <-ctx.Done():
+		// 		return "", false // Return empty string if timeout is reached
+		// 	default:
+		// 		// Wait for a signal that an item has been added to the list
+		// 		s.cond.Wait()
+		// 	}
+		// } else {
+		// 	// If no timeout is set, wait indefinitely for an item to be added
+		// 	s.cond.Wait()
+		// }
 	}
 
 }
@@ -525,7 +525,7 @@ func handleConnection(conn net.Conn) {
 						key := commands[1]
 						conn.Write([]byte(fmt.Sprintf("*2\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", len(key), key, len(value), value)))
 					} else {
-						conn.Write([]byte("*-1\r\n"))
+						conn.Write([]byte("$-1\r\n"))
 					}
 				} else {
 					conn.Write([]byte("-ERR wrong number of arguments for 'blpop' command\r\n"))
