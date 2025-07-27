@@ -313,7 +313,7 @@ func (s *SafeList) LPop(key string, popCount int) ([]string, bool) {
 // BLPop blocks until an item is available in the list or the timeout is reached.
 func (s *SafeList) BLPop(key string, timeout time.Duration) (string, bool) {
 
-	fmt.Printf("[DEBUG] BLPop started: key=%s, timeout=%v\n", key, timeout)
+	// fmt.Printf("[DEBUG] BLPop started: key=%s, timeout=%v\n", key, timeout)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -332,12 +332,12 @@ func (s *SafeList) BLPop(key string, timeout time.Duration) (string, bool) {
 		go func() {
 			select {
 			case <-ctx.Done():
-				fmt.Printf("[DEBUG] Timeout goroutine triggered for key=%s\n", key)
+				// fmt.Printf("[DEBUG] Timeout goroutine triggered for key=%s\n", key)
 				s.mu.Lock()
-				s.cond.Signal()
+				// s.cond.Signal()
 				s.mu.Unlock()
 			case <-done:
-				fmt.Printf("[DEBUG] Timeout goroutine exiting normally for key=%s\n", key)
+				// fmt.Printf("[DEBUG] Timeout goroutine exiting normally for key=%s\n", key)
 				return
 			}
 		}()
@@ -345,11 +345,11 @@ func (s *SafeList) BLPop(key string, timeout time.Duration) (string, bool) {
 
 	// block wait
 	for {
-		fmt.Printf("[DEBUG] Checking for data: key=%s\n", key)
+		// fmt.Printf("[DEBUG] Checking for data: key=%s\n", key)
 		// Check if the key exists and has a non-empty list
 		m, ok := s.m[key]
 		if ok && m.Len > 0 {
-			fmt.Printf("[DEBUG] Found data for key=%s, len=%d\n", key, m.Len)
+			// fmt.Printf("[DEBUG] Found data for key=%s, len=%d\n", key, m.Len)
 
 			value := m.Head.ItemValue.Value
 			// Move the head pointer to the next item
@@ -361,23 +361,21 @@ func (s *SafeList) BLPop(key string, timeout time.Duration) (string, bool) {
 				m.Head.Prev = nil // Set the Prev pointer of the new head to nil
 			}
 			m.Len--
-			fmt.Printf("[DEBUG] BLPop returning: key=%s, value=%s\n", key, value)
+			// fmt.Printf("[DEBUG] BLPop returning: key=%s, value=%s\n", key, value)
 			return value, true
 		}
 
-		fmt.Printf("[DEBUG] No data found for key=%s, current map: %+v\n", key, s.m)
+		// fmt.Printf("[DEBUG] No data found for key=%s, current map: %+v\n", key, s.m)
 
 		if timeout > 0 {
 			if ctx.Err() != nil {
 
-				fmt.Printf("[DEBUG] Context timeout for key=%s\n", key)
+				// fmt.Printf("[DEBUG] Context timeout for key=%s\n", key)
 
 				return "", false
 			}
-			s.cond.Wait()
-		} else {
-			s.cond.Wait()
 		}
+		s.cond.Wait()
 		// fmt.Printf("[DEBUG] Waiting on condition variable for key=%s\n", key)
 		// s.cond.Wait()
 		// fmt.Printf("[DEBUG] Woke up from condition variable for key=%s\n", key)
