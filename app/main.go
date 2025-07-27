@@ -522,12 +522,14 @@ func handleConnection(conn net.Conn) {
 				}
 			case "BLPOP":
 				if len(commands) == 3 {
-					timeout, err := strconv.Atoi(commands[2])
+					// BLPOP key timeout
+					// timeout is in milliseconds
+					timeout, err := strconv.ParseFloat(commands[2], 64)
 					if err != nil {
 						conn.Write([]byte("-ERR invalid timeout value\r\n"))
 						continue
 					}
-					value, ok := safeList.BLPop(commands[1], time.Duration(timeout)*time.Millisecond)
+					value, ok := safeList.BLPop(commands[1], time.Duration(timeout*float64(time.Second)))
 					if ok {
 						key := commands[1]
 						conn.Write([]byte(fmt.Sprintf("*2\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", len(key), key, len(value), value)))
