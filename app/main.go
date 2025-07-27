@@ -594,7 +594,7 @@ func handleConnection(conn net.Conn) {
 					if ok {
 						conn.Write([]byte(fmt.Sprintf("+%s\r\n", valyeType)))
 					} else {
-						conn.Write([]byte("$none\r\n"))
+						conn.Write([]byte("+none\r\n"))
 					}
 				} else {
 					// conn.Write([]byte("-ERR wrong number of arguments for 'type' command\r\n"))
