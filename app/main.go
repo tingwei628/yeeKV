@@ -98,10 +98,11 @@ func (s *SafeMap) Get(key string) (string, bool) {
 
 func (s *SafeList) RPush(key string, values ...string) int {
 	s.mu.Lock()
-	defer func() {
-		s.cond.Signal() // Notify all waiting LPOP/BLPOP
-		s.mu.Unlock()   // Ensure the mutex is unlocked even if an error occurs
-	}()
+	defer s.mu.Unlock()
+	// defer func() {
+	// 	s.cond.Signal() // Notify all waiting LPOP/BLPOP
+	// 	s.mu.Unlock()   // Ensure the mutex is unlocked even if an error occurs
+	// }()
 
 	m, ok := s.m[key]
 	if ok {
@@ -147,6 +148,13 @@ func (s *SafeList) RPush(key string, values ...string) int {
 			m.Len++
 		}
 		s.m[key] = m
+	}
+
+	// Notify all waiting LPOP/BLPOP goroutines that new items are available
+	// Avoid s.cond.Broadcast() here to prevent goroutines race consditions
+	// Instead, we signal only once for each RPush operation
+	for i := 0; i < len(values); i++ {
+		s.cond.Signal()
 	}
 
 	return m.Len
