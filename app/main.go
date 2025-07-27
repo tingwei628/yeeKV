@@ -257,7 +257,7 @@ func (s *SafeList) BLPop(key string, timeout time.Duration) (string, bool) {
 			case <-ctx.Done():
 				// fmt.Printf("[DEBUG] Timeout goroutine triggered for key=%s\n", key)
 				s.mu.Lock()
-				// s.cond.Signal()
+				s.cond.Signal()
 				s.mu.Unlock()
 			case <-done:
 				// fmt.Printf("[DEBUG] Timeout goroutine exiting normally for key=%s\n", key)
@@ -298,7 +298,6 @@ func (s *SafeList) BLPop(key string, timeout time.Duration) (string, bool) {
 				return "", false
 			}
 		}
-		fmt.Printf("A")
 		s.cond.Wait()
 		// fmt.Printf("[DEBUG] Waiting on condition variable for key=%s\n", key)
 		// s.cond.Wait()
