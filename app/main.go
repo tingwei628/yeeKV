@@ -239,24 +239,11 @@ func (s *SafeList) BLPop(key string, timeout time.Duration) (string, bool) {
 	var (
 		ctx    context.Context
 		cancel context.CancelFunc
-		waitCh chan struct{}
 	)
 
 	if timeout > 0 {
 		ctx, cancel = context.WithTimeout(context.Background(), timeout)
 		defer cancel()
-		waitCh = make(chan struct{}, 1)
-
-		go func() {
-			s.mu.Lock()
-			s.cond.Wait()
-			s.mu.Unlock()
-			select {
-			case waitCh <- struct{}{}:
-			default:
-			}
-		}()
-
 	} else {
 		ctx = context.Background()
 	}
@@ -286,14 +273,10 @@ func (s *SafeList) BLPop(key string, timeout time.Duration) (string, bool) {
 		// s.cond.Wait()
 
 		if timeout > 0 {
-			s.mu.Unlock()
-			select {
-			case <-waitCh:
-				s.mu.Lock()
-			case <-ctx.Done():
-				s.mu.Lock()
+			if ctx.Err() != nil {
 				return "", false
 			}
+			s.cond.Wait()
 		} else {
 			// If no timeout is set, wait indefinitely for an item to be added
 			s.cond.Wait()
