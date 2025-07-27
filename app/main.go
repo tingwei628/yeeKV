@@ -35,6 +35,18 @@ type LinkedList struct {
 	Len  int
 }
 
+type StreamElement struct {
+	Value interface{}
+}
+
+type StreamItem struct {
+	Id     string
+	Fields map[string]StreamElement
+}
+type Stream struct {
+	Items []StreamItem
+}
+
 type SafeMap struct {
 	mu sync.Mutex
 	m  map[string]Element
@@ -44,6 +56,11 @@ type SafeList struct {
 	cond *sync.Cond
 	mu   sync.Mutex
 	m    map[string]*LinkedList
+}
+
+type SafeStream struct {
+	mu sync.Mutex
+	m  map[string]*Stream
 }
 
 func NewSafeMap() *SafeMap {
@@ -57,6 +74,11 @@ func NewSafeList() *SafeList {
 	}
 	sl.cond = sync.NewCond(&sl.mu)
 	return sl
+}
+func NewSafeStream() *SafeStream {
+	return &SafeStream{
+		m: make(map[string]*Stream),
+	}
 }
 
 func (s *SafeMap) Set(key string, value string, px int64) {
@@ -377,11 +399,36 @@ func (s *SafeMap) Type(key string) (string, bool) {
 	return "string", true // Assuming all values in SafeMap are strings
 }
 
+func (s *SafeStream) XAdd(key string, fields map[string]interface{}) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Create a new StreamItem with a unique ID
+	id := fmt.Sprintf("%d-%d", time.Now().UnixMilli(), len(s.m[key].Items))
+	item := StreamItem{
+		Id:     id,
+		Fields: make(map[string]StreamElement),
+	}
+
+	for field, value := range fields {
+		item.Fields[field] = StreamElement{Value: value}
+	}
+
+	if _, ok := s.m[key]; !ok {
+		s.m[key] = &Stream{Items: []StreamItem{}}
+	}
+
+	s.m[key].Items = append(s.m[key].Items, item)
+
+	return id
+}
+
 // Ensures gofmt doesn't remove the "net" and "os" imports in stage 1 (feel free to remove this!)
 var _ = net.Listen
 var _ = os.Exit
 var safeMap *SafeMap
 var safeList *SafeList
+var safeStream *SafeStream
 
 const NEVER_EXPIRED = -1
 
@@ -399,6 +446,7 @@ func main() {
 
 	safeMap = NewSafeMap()
 	safeList = NewSafeList()
+	safeStream = NewSafeStream()
 
 	defer l.Close()
 
@@ -598,6 +646,29 @@ func handleConnection(conn net.Conn) {
 					}
 				} else {
 					// conn.Write([]byte("-ERR wrong number of arguments for 'type' command\r\n"))
+				}
+			case "XADD":
+				if len(commands) >= 3 {
+
+					fields := make(map[string]interface{})
+
+					for i := 2; i < len(commands); i += 2 {
+						if i+1 < len(commands) {
+							fields[commands[i]] = commands[i+1]
+						} else {
+							conn.Write([]byte("-ERR wrong number of arguments for 'xadd' command\r\n"))
+							continue
+						}
+					}
+
+					id := safeStream.XAdd(commands[1], fields)
+					if id != "" {
+						conn.Write([]byte(fmt.Sprintf("$%d\r\n%s\r\n", len(id), id)))
+					} else {
+						conn.Write([]byte("-ERR failed to add item to stream\r\n"))
+					}
+				} else {
+					// conn.Write([]byte("-ERR wrong number of arguments for 'xadd' command\r\n"))
 				}
 			default:
 				conn.Write([]byte("-ERR unknown command\r\n"))
