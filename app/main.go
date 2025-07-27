@@ -8,6 +8,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -235,17 +236,30 @@ func (s *SafeList) LPop(key string, popCount int) ([]string, bool) {
 // BLPop blocks until an item is available in the list or the timeout is reached.
 func (s *SafeList) BLPop(key string, timeout time.Duration) (string, bool) {
 
-	// var (
-	// 	ctx    context.Context
-	// 	cancel context.CancelFunc
-	// )
+	var (
+		ctx    context.Context
+		cancel context.CancelFunc
+		waitCh chan struct{}
+	)
 
-	// if timeout > 0 {
-	// 	ctx, cancel = context.WithTimeout(context.Background(), timeout)
-	// 	defer cancel()
-	// } else {
-	// 	ctx = context.Background()
-	// }
+	if timeout > 0 {
+		ctx, cancel = context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		waitCh = make(chan struct{}, 1)
+
+		go func() {
+			s.mu.Lock()
+			s.cond.Wait()
+			s.mu.Unlock()
+			select {
+			case waitCh <- struct{}{}:
+			default:
+			}
+		}()
+
+	} else {
+		ctx = context.Background()
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -269,19 +283,21 @@ func (s *SafeList) BLPop(key string, timeout time.Duration) (string, bool) {
 			return value, true
 		}
 
-		s.cond.Wait()
-		// if timeout > 0 {
-		// 	select {
-		// 	case <-ctx.Done():
-		// 		return "", false // Return empty string if timeout is reached
-		// 	default:
-		// 		// Wait for a signal that an item has been added to the list
-		// 		s.cond.Wait()
-		// 	}
-		// } else {
-		// 	// If no timeout is set, wait indefinitely for an item to be added
-		// 	s.cond.Wait()
-		// }
+		// s.cond.Wait()
+
+		if timeout > 0 {
+			s.mu.Unlock()
+			select {
+			case <-waitCh:
+				s.mu.Lock()
+			case <-ctx.Done():
+				s.mu.Lock()
+				return "", false
+			}
+		} else {
+			// If no timeout is set, wait indefinitely for an item to be added
+			s.cond.Wait()
+		}
 	}
 
 }
