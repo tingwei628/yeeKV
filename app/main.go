@@ -403,6 +403,12 @@ func (s *SafeStream) XAdd(key string, fields map[string]interface{}) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	stream, ok := s.m[key]
+	if !ok {
+		stream = &Stream{Items: []StreamItem{}}
+		s.m[key] = stream
+	}
+
 	// Create a new StreamItem with a unique ID
 	id := fmt.Sprintf("%d-%d", time.Now().UnixMilli(), len(s.m[key].Items))
 	item := StreamItem{
@@ -414,12 +420,7 @@ func (s *SafeStream) XAdd(key string, fields map[string]interface{}) string {
 		item.Fields[field] = StreamElement{Value: value}
 	}
 
-	if _, ok := s.m[key]; !ok {
-		s.m[key] = &Stream{Items: []StreamItem{}}
-	}
-
-	s.m[key].Items = append(s.m[key].Items, item)
-	fmt.Println("[DEBUG]XAdd: ", key, item.Id, item.Fields)
+	stream.Items = append(stream.Items, item)
 	return id
 }
 
