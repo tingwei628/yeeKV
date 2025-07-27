@@ -419,7 +419,7 @@ func (s *SafeStream) XAdd(key string, fields map[string]interface{}) string {
 	}
 
 	s.m[key].Items = append(s.m[key].Items, item)
-
+	fmt.Println("[DEBUG]XAdd: ", key, item.Id, item.Fields)
 	return id
 }
 
