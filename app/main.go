@@ -99,8 +99,8 @@ func (s *SafeMap) Get(key string) (string, bool) {
 func (s *SafeList) RPush(key string, values ...string) int {
 	s.mu.Lock()
 	defer func() {
-		s.cond.Broadcast() // Notify all waiting LPOP/BLPOP
-		s.mu.Unlock()      // Ensure the mutex is unlocked even if an error occurs
+		s.cond.Signal() // Notify all waiting LPOP/BLPOP
+		s.mu.Unlock()   // Ensure the mutex is unlocked even if an error occurs
 	}()
 
 	m, ok := s.m[key]
