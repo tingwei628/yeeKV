@@ -244,7 +244,9 @@ func (s *SafeList) BLPop(key string, timeout time.Duration) (string, bool) {
 		cancel context.CancelFunc
 	)
 
-	if timeout > 0 {
+	if timeout == 0 {
+
+	} else {
 		ctx, cancel = context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 
@@ -281,7 +283,9 @@ func (s *SafeList) BLPop(key string, timeout time.Duration) (string, bool) {
 			return value, true
 		}
 
-		if timeout > 0 {
+		if timeout == 0 {
+
+		} else {
 			if ctx.Err() != nil {
 				return "", false
 			}
