@@ -233,83 +233,6 @@ func (s *SafeList) LPop(key string, popCount int) ([]string, bool) {
 	return result, false // Return empty string if the list is empty or key does not exist
 }
 
-// func (s *SafeList) BLPop(key string, timeout time.Duration) (string, bool) {
-// 	s.mu.Lock()
-// 	defer s.mu.Unlock()
-
-// 	if m, ok := s.m[key]; ok && m.Len > 0 {
-// 		value := m.Head.ItemValue.Value
-// 		// Move the head pointer to the next item
-// 		m.Head = m.Head.Next
-// 		// If the list becomes empty, set Tail to nil
-// 		if m.Head == nil {
-// 			m.Tail = nil
-// 		} else {
-// 			m.Head.Prev = nil // Set the Prev pointer of the new head to nil
-// 		}
-// 		m.Len--
-// 		return value, true
-// 	}
-
-// 	if timeout == 0 {
-// 		for {
-// 			s.cond.Wait()
-
-// 			if m, ok := s.m[key]; ok && m.Len > 0 {
-// 				value := m.Head.ItemValue.Value
-// 				// Move the head pointer to the next item
-// 				m.Head = m.Head.Next
-// 				// If the list becomes empty, set Tail to nil
-// 				if m.Head == nil {
-// 					m.Tail = nil
-// 				} else {
-// 					m.Head.Prev = nil // Set the Prev pointer of the new head to nil
-// 				}
-// 				m.Len--
-// 				return value, true
-// 			}
-// 		}
-// 	} else {
-// 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-// 		defer cancel()
-
-// 		done := make(chan struct{})
-// 		defer close(done)
-
-// 		go func() {
-// 			select {
-// 			case <-ctx.Done():
-// 				s.mu.Lock()
-// 				s.cond.Signal()
-// 				s.mu.Unlock()
-// 			case <-done:
-// 				return
-// 			}
-// 		}()
-// 		for {
-// 			if m, ok := s.m[key]; ok && m.Len > 0 {
-// 				value := m.Head.ItemValue.Value
-// 				// Move the head pointer to the next item
-// 				m.Head = m.Head.Next
-// 				// If the list becomes empty, set Tail to nil
-// 				if m.Head == nil {
-// 					m.Tail = nil
-// 				} else {
-// 					m.Head.Prev = nil // Set the Prev pointer of the new head to nil
-// 				}
-// 				m.Len--
-// 				return value, true
-// 			}
-
-// 			if ctx.Err() != nil {
-// 				return "", false
-// 			}
-
-// 			s.cond.Wait()
-// 		}
-// 	}
-// }
-
 // BLPop blocks until an item is available in the list or the timeout is reached.
 func (s *SafeList) BLPop(key string, timeout time.Duration) (string, bool) {
 
@@ -334,7 +257,7 @@ func (s *SafeList) BLPop(key string, timeout time.Duration) (string, bool) {
 			case <-ctx.Done():
 				// fmt.Printf("[DEBUG] Timeout goroutine triggered for key=%s\n", key)
 				s.mu.Lock()
-				s.cond.Signal()
+				// s.cond.Signal()
 				s.mu.Unlock()
 			case <-done:
 				// fmt.Printf("[DEBUG] Timeout goroutine exiting normally for key=%s\n", key)
