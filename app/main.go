@@ -374,10 +374,13 @@ func (s *SafeList) BLPop(key string, timeout time.Duration) (string, bool) {
 
 				return "", false
 			}
+			s.cond.Wait()
+		} else {
+			s.cond.Wait()
 		}
-		fmt.Printf("[DEBUG] Waiting on condition variable for key=%s\n", key)
-		s.cond.Wait()
-		fmt.Printf("[DEBUG] Woke up from condition variable for key=%s\n", key)
+		// fmt.Printf("[DEBUG] Waiting on condition variable for key=%s\n", key)
+		// s.cond.Wait()
+		// fmt.Printf("[DEBUG] Woke up from condition variable for key=%s\n", key)
 	}
 
 }
