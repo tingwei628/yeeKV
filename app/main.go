@@ -233,55 +233,100 @@ func (s *SafeList) LPop(key string, popCount int) ([]string, bool) {
 	return result, false // Return empty string if the list is empty or key does not exist
 }
 
+// func (s *SafeList) BLPop(key string, timeout time.Duration) (string, bool) {
+// 	s.mu.Lock()
+// 	defer s.mu.Unlock()
+
+// 	if m, ok := s.m[key]; ok && m.Len > 0 {
+// 		value := m.Head.ItemValue.Value
+// 		// Move the head pointer to the next item
+// 		m.Head = m.Head.Next
+// 		// If the list becomes empty, set Tail to nil
+// 		if m.Head == nil {
+// 			m.Tail = nil
+// 		} else {
+// 			m.Head.Prev = nil // Set the Prev pointer of the new head to nil
+// 		}
+// 		m.Len--
+// 		return value, true
+// 	}
+
+// 	if timeout == 0 {
+// 		for {
+// 			s.cond.Wait()
+
+// 			if m, ok := s.m[key]; ok && m.Len > 0 {
+// 				value := m.Head.ItemValue.Value
+// 				// Move the head pointer to the next item
+// 				m.Head = m.Head.Next
+// 				// If the list becomes empty, set Tail to nil
+// 				if m.Head == nil {
+// 					m.Tail = nil
+// 				} else {
+// 					m.Head.Prev = nil // Set the Prev pointer of the new head to nil
+// 				}
+// 				m.Len--
+// 				return value, true
+// 			}
+// 		}
+// 	} else {
+// 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+// 		defer cancel()
+
+// 		done := make(chan struct{})
+// 		defer close(done)
+
+// 		go func() {
+// 			select {
+// 			case <-ctx.Done():
+// 				s.mu.Lock()
+// 				s.cond.Signal()
+// 				s.mu.Unlock()
+// 			case <-done:
+// 				return
+// 			}
+// 		}()
+// 		for {
+// 			if m, ok := s.m[key]; ok && m.Len > 0 {
+// 				value := m.Head.ItemValue.Value
+// 				// Move the head pointer to the next item
+// 				m.Head = m.Head.Next
+// 				// If the list becomes empty, set Tail to nil
+// 				if m.Head == nil {
+// 					m.Tail = nil
+// 				} else {
+// 					m.Head.Prev = nil // Set the Prev pointer of the new head to nil
+// 				}
+// 				m.Len--
+// 				return value, true
+// 			}
+
+// 			if ctx.Err() != nil {
+// 				return "", false
+// 			}
+
+// 			s.cond.Wait()
+// 		}
+// 	}
+// }
+
+// BLPop blocks until an item is available in the list or the timeout is reached.
 func (s *SafeList) BLPop(key string, timeout time.Duration) (string, bool) {
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// 首先检查是否已有数据
-	if m, ok := s.m[key]; ok && m.Len > 0 {
-		value := m.Head.ItemValue.Value
-		// Move the head pointer to the next item
-		m.Head = m.Head.Next
-		// If the list becomes empty, set Tail to nil
-		if m.Head == nil {
-			m.Tail = nil
-		} else {
-			m.Head.Prev = nil // Set the Prev pointer of the new head to nil
-		}
-		m.Len--
-		return value, true
-	}
+	var (
+		ctx    context.Context
+		cancel context.CancelFunc
+	)
 
-	// 根据超时时间决定处理方式
-	if timeout == 0 {
-		// timeout = 0 表示无限等待
-		for {
-			s.cond.Wait()
-
-			// 检查是否有数据
-			if m, ok := s.m[key]; ok && m.Len > 0 {
-				value := m.Head.ItemValue.Value
-				// Move the head pointer to the next item
-				m.Head = m.Head.Next
-				// If the list becomes empty, set Tail to nil
-				if m.Head == nil {
-					m.Tail = nil
-				} else {
-					m.Head.Prev = nil // Set the Prev pointer of the new head to nil
-				}
-				m.Len--
-				return value, true
-			}
-			// 没有数据，继续等待
-		}
-	} else {
-		// timeout > 0，有限等待
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	if timeout > 0 {
+		ctx, cancel = context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 
 		done := make(chan struct{})
 		defer close(done)
-
 		go func() {
 			select {
 			case <-ctx.Done():
@@ -292,111 +337,39 @@ func (s *SafeList) BLPop(key string, timeout time.Duration) (string, bool) {
 				return
 			}
 		}()
+	}
 
-		// 等待循环
-		for {
-			// 检查数据
-			if m, ok := s.m[key]; ok && m.Len > 0 {
-				value := m.Head.ItemValue.Value
-				// Move the head pointer to the next item
-				m.Head = m.Head.Next
-				// If the list becomes empty, set Tail to nil
-				if m.Head == nil {
-					m.Tail = nil
-				} else {
-					m.Head.Prev = nil // Set the Prev pointer of the new head to nil
-				}
-				m.Len--
-				return value, true
+	// block wait
+	for {
+
+		// Check if the key exists and has a non-empty list
+		m, ok := s.m[key]
+		if ok && m.Len > 0 {
+			value := m.Head.ItemValue.Value
+			// Move the head pointer to the next item
+			m.Head = m.Head.Next
+			// If the list becomes empty, set Tail to nil
+			if m.Head == nil {
+				m.Tail = nil
+			} else {
+				m.Head.Prev = nil // Set the Prev pointer of the new head to nil
 			}
+			m.Len--
+			return value, true
+		}
 
-			// 检查超时
+		if timeout > 0 {
 			if ctx.Err() != nil {
 				return "", false
 			}
-
-			// 继续等待
+			s.cond.Wait()
+		} else {
+			// If no timeout is set, wait indefinitely for an item to be added
 			s.cond.Wait()
 		}
 	}
+
 }
-
-// // BLPop blocks until an item is available in the list or the timeout is reached.
-// func (s *SafeList) BLPop(key string, timeout time.Duration) (string, bool) {
-
-// 	s.mu.Lock()
-// 	defer s.mu.Unlock()
-
-// 	var (
-// 		ctx    context.Context
-// 		cancel context.CancelFunc
-// 	)
-
-// 	ctx, cancel = context.WithTimeout(context.Background(), timeout)
-// 	defer cancel()
-
-// 	done := make(chan struct{})
-// 	defer close(done)
-// 	go func() {
-// 		select {
-// 		case <-ctx.Done():
-// 			s.mu.Lock()
-// 			s.cond.Signal()
-// 			s.mu.Unlock()
-// 		case <-done:
-// 			return
-// 		}
-// 	}()
-
-// 	// if timeout > 0 {
-// 	// 	ctx, cancel = context.WithTimeout(context.Background(), timeout)
-// 	// 	defer cancel()
-// 	// } else {
-// 	// 	ctx = context.Background()
-// 	// }
-
-// 	// s.mu.Lock()
-// 	// defer s.mu.Unlock()
-
-// 	// block wait
-// 	for {
-
-// 		// Check if the key exists and has a non-empty list
-// 		m, ok := s.m[key]
-// 		if ok && m.Len > 0 {
-// 			value := m.Head.ItemValue.Value
-// 			// Move the head pointer to the next item
-// 			m.Head = m.Head.Next
-// 			// If the list becomes empty, set Tail to nil
-// 			if m.Head == nil {
-// 				m.Tail = nil
-// 			} else {
-// 				m.Head.Prev = nil // Set the Prev pointer of the new head to nil
-// 			}
-// 			m.Len--
-// 			return value, true
-// 		}
-
-// 		// s.cond.Wait()
-
-// 		if ctx.Err() != nil {
-// 			return "", false
-// 		}
-
-// 		s.cond.Wait()
-
-// 		// if timeout > 0 {
-// 		// 	if ctx.Err() != nil {
-// 		// 		return "", false
-// 		// 	}
-// 		// 	s.cond.Wait()
-// 		// } else {
-// 		// 	// If no timeout is set, wait indefinitely for an item to be added
-// 		// 	s.cond.Wait()
-// 		// }
-// 	}
-
-// }
 
 func (s *SafeList) LRange(key string, start, stop int) []string {
 	s.mu.Lock()
