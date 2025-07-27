@@ -257,6 +257,7 @@ func (s *SafeList) BLPop(key string, timeout time.Duration) (string, bool) {
 			select {
 			// Wait for the context to be done or the timeout to expire
 			case <-ctx.Done():
+				// If the context is done, signal the condition variable to wake up the waiting goroutine
 				s.cond.Signal()
 			// Avoid goroutine leak
 			case <-done:
@@ -357,6 +358,23 @@ func (s *SafeList) LLen(key string) int {
 		return m.Len
 	}
 	return 0 // Return 0 if the key does not exist
+}
+
+func (s *SafeMap) Type(key string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	v, ok := s.m[key]
+	if !ok {
+		return "", false // Key does not exist
+	}
+
+	if !v.ExpiryTime.IsZero() && time.Now().After(v.ExpiryTime) {
+		delete(s.m, key)
+		return "", false // Key has expired
+	}
+
+	return "string", true // Assuming all values in SafeMap are strings
 }
 
 // Ensures gofmt doesn't remove the "net" and "os" imports in stage 1 (feel free to remove this!)
@@ -569,6 +587,17 @@ func handleConnection(conn net.Conn) {
 					conn.Write([]byte(fmt.Sprintf(":%d\r\n", v)))
 				} else {
 					// conn.Write([]byte("-ERR wrong number of arguments for 'llen' command\r\n"))
+				}
+			case "TYPE":
+				if len(commands) == 2 {
+					valyeType, ok := safeMap.Type(commands[1])
+					if ok {
+						conn.Write([]byte(fmt.Sprintf("+%s\r\n", valyeType)))
+					} else {
+						conn.Write([]byte("$none\r\n"))
+					}
+				} else {
+					// conn.Write([]byte("-ERR wrong number of arguments for 'type' command\r\n"))
 				}
 			default:
 				conn.Write([]byte("-ERR unknown command\r\n"))
