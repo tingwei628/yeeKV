@@ -235,8 +235,18 @@ func (s *SafeList) LPop(key string, popCount int) ([]string, bool) {
 
 // BLPop blocks until an item is available in the list or the timeout is reached.
 func (s *SafeList) BLPop(key string, timeout time.Duration) (string, string, bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
+
+	var (
+		ctx    context.Context
+		cancel context.CancelFunc
+	)
+
+	if timeout > 0 {
+		ctx, cancel = context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+	} else {
+		ctx = context.Background()
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -260,11 +270,16 @@ func (s *SafeList) BLPop(key string, timeout time.Duration) (string, string, boo
 			return key, value, true
 		}
 
-		select {
-		case <-ctx.Done():
-			return "", "", false // Return empty string if timeout is reached
-		default:
-			// Wait for a signal that an item has been added to the list
+		if timeout > 0 {
+			select {
+			case <-ctx.Done():
+				return "", "", false // Return empty string if timeout is reached
+			default:
+				// Wait for a signal that an item has been added to the list
+				s.cond.Wait()
+			}
+		} else {
+			// If no timeout is set, wait indefinitely for an item to be added
 			s.cond.Wait()
 		}
 	}
