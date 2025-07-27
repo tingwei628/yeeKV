@@ -241,12 +241,14 @@ func (s *SafeList) BLPop(key string, timeout time.Duration) (string, bool) {
 		cancel context.CancelFunc
 	)
 
-	if timeout > 0 {
-		ctx, cancel = context.WithTimeout(context.Background(), timeout)
-		defer cancel()
-	} else {
-		ctx = context.Background()
-	}
+	ctx, cancel = context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	// if timeout > 0 {
+	// 	ctx, cancel = context.WithTimeout(context.Background(), timeout)
+	// 	defer cancel()
+	// } else {
+	// 	ctx = context.Background()
+	// }
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -272,15 +274,21 @@ func (s *SafeList) BLPop(key string, timeout time.Duration) (string, bool) {
 
 		// s.cond.Wait()
 
-		if timeout > 0 {
-			if ctx.Err() != nil {
-				return "", false
-			}
-			s.cond.Wait()
-		} else {
-			// If no timeout is set, wait indefinitely for an item to be added
-			s.cond.Wait()
+		if ctx.Err() != nil {
+			return "", false
 		}
+
+		s.cond.Wait()
+
+		// if timeout > 0 {
+		// 	if ctx.Err() != nil {
+		// 		return "", false
+		// 	}
+		// 	s.cond.Wait()
+		// } else {
+		// 	// If no timeout is set, wait indefinitely for an item to be added
+		// 	s.cond.Wait()
+		// }
 	}
 
 }
