@@ -234,7 +234,7 @@ func (s *SafeList) LPop(key string, popCount int) ([]string, bool) {
 }
 
 // BLPop blocks until an item is available in the list or the timeout is reached.
-func (s *SafeList) BLPop(key string, timeout time.Duration) (string, string, bool) {
+func (s *SafeList) BLPop(key string, timeout time.Duration) (string, bool) {
 
 	var (
 		ctx    context.Context
@@ -267,13 +267,13 @@ func (s *SafeList) BLPop(key string, timeout time.Duration) (string, string, boo
 				m.Head.Prev = nil // Set the Prev pointer of the new head to nil
 			}
 			m.Len--
-			return key, value, true
+			return value, true
 		}
 
 		if timeout > 0 {
 			select {
 			case <-ctx.Done():
-				return "", "", false // Return empty string if timeout is reached
+				return "", false // Return empty string if timeout is reached
 			default:
 				// Wait for a signal that an item has been added to the list
 				s.cond.Wait()
@@ -520,11 +520,12 @@ func handleConnection(conn net.Conn) {
 						conn.Write([]byte("-ERR invalid timeout value\r\n"))
 						continue
 					}
-					key, value, ok := safeList.BLPop(commands[1], time.Duration(timeout)*time.Millisecond)
-					if key != "" && value != "" && ok {
+					value, ok := safeList.BLPop(commands[1], time.Duration(timeout)*time.Millisecond)
+					if ok {
+						key := commands[1]
 						conn.Write([]byte(fmt.Sprintf("*2\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", len(key), key, len(value), value)))
 					} else {
-						conn.Write([]byte("$-1\r\n"))
+						conn.Write([]byte("*-1\r\n"))
 					}
 				} else {
 					conn.Write([]byte("-ERR wrong number of arguments for 'blpop' command\r\n"))
