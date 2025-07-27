@@ -1,12 +1,14 @@
 /*
 todo: add more func() return error
 todo: separate more data structures into small packages
-todo: setup goroutine with a workpool
+todo: setup goroutine with a workpool (like in BLPop)
+todo: safemap need to be active to check expired keys
 */
 package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -39,8 +41,9 @@ type SafeMap struct {
 }
 
 type SafeList struct {
-	mu sync.Mutex
-	m  map[string]*LinkedList
+	cond *sync.Cond
+	mu   sync.Mutex
+	m    map[string]*LinkedList
 }
 
 func NewSafeMap() *SafeMap {
@@ -49,9 +52,11 @@ func NewSafeMap() *SafeMap {
 	}
 }
 func NewSafeList() *SafeList {
-	return &SafeList{
+	sl := &SafeList{
 		m: make(map[string]*LinkedList),
 	}
+	sl.cond = sync.NewCond(&sl.mu)
+	return sl
 }
 
 func (s *SafeMap) Set(key string, value string, px int64) {
@@ -75,6 +80,7 @@ func (s *SafeMap) Get(key string) (string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	v, ok := s.m[key]
+	// Check if the key exists and has an expiry time
 	if ok && !v.ExpiryTime.IsZero() {
 		if time.Now().After(v.ExpiryTime) {
 			delete(s.m, key)
@@ -92,7 +98,10 @@ func (s *SafeMap) Get(key string) (string, bool) {
 
 func (s *SafeList) RPush(key string, values ...string) int {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer func() {
+		s.cond.Broadcast() // Notify all waiting LPOP/BLPOP
+		s.mu.Unlock()      // Ensure the mutex is unlocked even if an error occurs
+	}()
 
 	m, ok := s.m[key]
 	if ok {
@@ -222,6 +231,44 @@ func (s *SafeList) LPop(key string, popCount int) ([]string, bool) {
 		return result, true
 	}
 	return result, false // Return empty string if the list is empty or key does not exist
+}
+
+// BLPop blocks until an item is available in the list or the timeout is reached.
+func (s *SafeList) BLPop(key string, timeout time.Duration) (string, string, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// block wait
+	for {
+
+		// Check if the key exists and has a non-empty list
+		m, ok := s.m[key]
+		if ok && m.Len > 0 {
+			value := m.Head.ItemValue.Value
+			// Move the head pointer to the next item
+			m.Head = m.Head.Next
+			// If the list becomes empty, set Tail to nil
+			if m.Head == nil {
+				m.Tail = nil
+			} else {
+				m.Head.Prev = nil // Set the Prev pointer of the new head to nil
+			}
+			m.Len--
+			return key, value, true
+		}
+
+		select {
+		case <-ctx.Done():
+			return "", "", false // Return empty string if timeout is reached
+		default:
+			// Wait for a signal that an item has been added to the list
+			s.cond.Wait()
+		}
+	}
+
 }
 
 func (s *SafeList) LRange(key string, start, stop int) []string {
@@ -450,6 +497,22 @@ func handleConnection(conn net.Conn) {
 					}
 				} else {
 					// conn.Write([]byte("-ERR wrong number of arguments for 'lpop' command\r\n"))
+				}
+			case "BLPOP":
+				if len(commands) == 3 {
+					timeout, err := strconv.Atoi(commands[2])
+					if err != nil {
+						conn.Write([]byte("-ERR invalid timeout value\r\n"))
+						continue
+					}
+					key, value, ok := safeList.BLPop(commands[1], time.Duration(timeout)*time.Millisecond)
+					if key != "" && value != "" && ok {
+						conn.Write([]byte(fmt.Sprintf("*2\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", len(key), key, len(value), value)))
+					} else {
+						conn.Write([]byte("$-1\r\n"))
+					}
+				} else {
+					conn.Write([]byte("-ERR wrong number of arguments for 'blpop' command\r\n"))
 				}
 			case "LRANGE":
 				if len(commands) == 4 {
