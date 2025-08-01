@@ -118,6 +118,27 @@ func (s *SafeMap) Get(key string) (string, bool) {
 	return "", false
 }
 
+func (s *SafeMap) Type(key string) (string, bool) {
+	// s.mu.Lock()
+	// defer s.mu.Unlock()
+	_, ok := s.Get(key) // Ensure the key is checked for expiry
+	if ok {
+		return "string", true // Assuming all values in SafeMap are strings
+	}
+	return "", false // Key does not exist or has expired
+	// v, ok := s.m[key]
+	// if !ok {
+	// 	return "", false // Key does not exist
+	// }
+
+	// if !v.ExpiryTime.IsZero() && time.Now().After(v.ExpiryTime) {
+	// 	delete(s.m, key)
+	// 	return "", false // Key has expired
+	// }
+
+	// return "string", true // Assuming all values in SafeMap are strings
+}
+
 func (s *SafeList) RPush(key string, values ...string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -382,26 +403,28 @@ func (s *SafeList) LLen(key string) int {
 	return 0 // Return 0 if the key does not exist
 }
 
-func (s *SafeMap) Type(key string) (string, bool) {
+func (s *SafeList) Type(key string) (string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	v, ok := s.m[key]
-	if !ok {
-		return "", false // Key does not exist
+	if _, ok := s.m[key]; ok {
+		return "list", true
 	}
-
-	if !v.ExpiryTime.IsZero() && time.Now().After(v.ExpiryTime) {
-		delete(s.m, key)
-		return "", false // Key has expired
-	}
-
-	return "string", true // Assuming all values in SafeMap are strings
+	return "", false
 }
 
 func isValidStreamID(id string) bool {
 	return true
 }
+func (s *SafeStream) Type(key string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.m[key]
+	if ok {
+		return "stream", true // Key does not exist
+	}
+	return "", false // Assuming all values in SafeMap are strings
+}
+
 func (s *SafeStream) XAdd(key string, id string, fields map[string]interface{}) (string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -647,12 +670,16 @@ func handleConnection(conn net.Conn) {
 				}
 			case "TYPE":
 				if len(commands) == 2 {
-					valyeType, ok := safeMap.Type(commands[1])
-					if ok {
-						conn.Write([]byte(fmt.Sprintf("+%s\r\n", valyeType)))
+					var typeName string
+					var ok bool
+
+					if typeName, ok = safeMap.Type(commands[1]); ok {
+					} else if typeName, ok = safeList.Type(commands[1]); ok {
+					} else if typeName, ok = safeStream.Type(commands[1]); ok {
 					} else {
-						conn.Write([]byte("+none\r\n"))
+						typeName = "none"
 					}
+					conn.Write([]byte(fmt.Sprintf("+%s\r\n", typeName)))
 				} else {
 					// conn.Write([]byte("-ERR wrong number of arguments for 'type' command\r\n"))
 				}
