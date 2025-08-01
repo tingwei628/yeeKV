@@ -18,6 +18,11 @@ import (
 	"time"
 )
 
+const (
+	ERR_STREAM_XADD_00      = "The ID specified in XADD must be greater than 0-0"
+	ERR_STREAM_XADD_INVALID = "The ID specified in XADD is equal or smaller than the target stream top item"
+)
+
 type Element struct {
 	Value      string
 	ExpiryTime time.Time
@@ -119,24 +124,11 @@ func (s *SafeMap) Get(key string) (string, bool) {
 }
 
 func (s *SafeMap) Type(key string) (string, bool) {
-	// s.mu.Lock()
-	// defer s.mu.Unlock()
 	_, ok := s.Get(key) // Ensure the key is checked for expiry
 	if ok {
 		return "string", true // Assuming all values in SafeMap are strings
 	}
 	return "", false // Key does not exist or has expired
-	// v, ok := s.m[key]
-	// if !ok {
-	// 	return "", false // Key does not exist
-	// }
-
-	// if !v.ExpiryTime.IsZero() && time.Now().After(v.ExpiryTime) {
-	// 	delete(s.m, key)
-	// 	return "", false // Key has expired
-	// }
-
-	// return "string", true // Assuming all values in SafeMap are strings
 }
 
 func (s *SafeList) RPush(key string, values ...string) int {
@@ -412,8 +404,56 @@ func (s *SafeList) Type(key string) (string, bool) {
 	return "", false
 }
 
-func isValidStreamID(id string) bool {
-	return true
+func parseStreamId(id string) (int64, int64, bool) {
+	parts := strings.Split(id, "-")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	// Ensure both parts are non-empty
+	if parts[0] == "" || parts[1] == "" {
+		return 0, 0, false
+	}
+	// Try to parse the first part as milliseconds
+	// int64
+	ms, err1 := strconv.ParseInt(parts[0], 10, 64)
+	// Try to parse the second part as sequence number
+	// int64
+	seq, err2 := strconv.ParseInt(parts[1], 10, 64)
+	// Check if both parts are valid integers and non-negative
+	if err1 != nil || err2 != nil || ms < 0 || seq < 0 {
+		return 0, 0, false
+	}
+	return ms, seq, true
+}
+func isValidStreamId(id, lastId string) (bool, string) {
+	if id == "0-0" {
+		return false, ERR_STREAM_XADD_00
+	}
+
+	ms, seq, ok := parseStreamId(id)
+	if !ok || (ms == 0 && seq == 0) {
+		return false, ERR_STREAM_XADD_INVALID
+	}
+	if lastId == "" {
+		// stream is empty
+		// 0-0 is not a valid stream ID, so we can only return true if ms > 0 or (ms == 0 && seq > 0)
+		return (ms > 0 || (ms == 0 && seq > 0)), ERR_STREAM_XADD_INVALID
+	}
+
+	lastMs, lastSeq, ok := parseStreamId(lastId)
+	if !ok {
+		return false, ERR_STREAM_XADD_INVALID
+	}
+
+	if ms > lastMs {
+		return true, ""
+	}
+	if ms == lastMs && seq > lastSeq {
+		return true, ""
+	}
+
+	return false, ERR_STREAM_XADD_INVALID
+
 }
 func (s *SafeStream) Type(key string) (string, bool) {
 	s.mu.Lock()
@@ -425,7 +465,7 @@ func (s *SafeStream) Type(key string) (string, bool) {
 	return "", false // Assuming all values in SafeMap are strings
 }
 
-func (s *SafeStream) XAdd(key string, id string, fields map[string]interface{}) (string, bool) {
+func (s *SafeStream) XAdd(key string, id string, fields map[string]interface{}) (string, bool, string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -438,8 +478,15 @@ func (s *SafeStream) XAdd(key string, id string, fields map[string]interface{}) 
 	// Create a new StreamItem with a unique ID
 	if id == "*" {
 		id = fmt.Sprintf("%d-%d", time.Now().UnixMilli(), len(s.m[key].Items))
-	} else if !isValidStreamID(id) {
-		return "", false // Invalid ID format
+	} else {
+		lastId := ""
+		if len(stream.Items) > 0 {
+			lastId = stream.Items[len(stream.Items)-1].Id
+		}
+		ok, errStr := isValidStreamId(id, lastId)
+		if !ok {
+			return "", false, errStr
+		}
 	}
 
 	item := StreamItem{
@@ -452,7 +499,7 @@ func (s *SafeStream) XAdd(key string, id string, fields map[string]interface{}) 
 	}
 
 	stream.Items = append(stream.Items, item)
-	return id, true
+	return id, true, ""
 }
 
 // Ensures gofmt doesn't remove the "net" and "os" imports in stage 1 (feel free to remove this!)
@@ -697,11 +744,11 @@ func handleConnection(conn net.Conn) {
 						}
 					}
 
-					id, ok := safeStream.XAdd(commands[1], commands[2], fields)
+					id, ok, errStr := safeStream.XAdd(commands[1], commands[2], fields)
 					if ok {
 						conn.Write([]byte(fmt.Sprintf("$%d\r\n%s\r\n", len(id), id)))
 					} else {
-						conn.Write([]byte("-ERR invalid stream ID format\r\n"))
+						conn.Write([]byte(fmt.Sprintf("-ERR %s\r\n", errStr)))
 					}
 				} else {
 					// conn.Write([]byte("-ERR wrong number of arguments for 'xadd' command\r\n"))
