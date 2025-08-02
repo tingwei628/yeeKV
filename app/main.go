@@ -555,7 +555,7 @@ func handleConnection(conn net.Conn) {
 	for scanner.Scan() {
 		text := scanner.Text()
 
-		// fmt.Printf("Received: %q\n", text)
+		fmt.Printf("Received: %q\n", text)
 
 		// Handle the command
 		text = strings.TrimSpace(text)
