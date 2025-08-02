@@ -785,6 +785,7 @@ func handleConnection(conn net.Conn) {
 			readBulkCommand = false
 			commands = nil
 			command_count = 0
+			isReadFirstByte = false
 
 		} else {
 
