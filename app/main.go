@@ -597,6 +597,8 @@ func handleConnection(conn net.Conn) {
 			isReadFirstByte = true
 			commands = make([]string, 0, command_count)
 
+			fmt.Printf("commands %v\n", commands)
+
 		} else if strings.HasPrefix(text, "$") {
 			readBulkCommand = true
 			continue
