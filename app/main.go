@@ -404,55 +404,79 @@ func (s *SafeList) Type(key string) (string, bool) {
 	return "", false
 }
 
-func parseStreamId(id string) (int64, int64, bool) {
-	parts := strings.Split(id, "-")
-	if len(parts) != 2 {
-		return 0, 0, false
-	}
-	// Ensure both parts are non-empty
-	if parts[0] == "" || parts[1] == "" {
-		return 0, 0, false
-	}
-	// Try to parse the first part as milliseconds
-	// int64
-	ms, err1 := strconv.ParseInt(parts[0], 10, 64)
-	// Try to parse the second part as sequence number
-	// int64
-	seq, err2 := strconv.ParseInt(parts[1], 10, 64)
-	// Check if both parts are valid integers and non-negative
-	if err1 != nil || err2 != nil || ms < 0 || seq < 0 {
-		return 0, 0, false
-	}
-	return ms, seq, true
-}
-func isValidStreamId(id, lastId string) (bool, string) {
+func (s *Stream) NewValidStreamId(id string) (string, bool, string) {
 	if id == "0-0" {
-		return false, ERR_STREAM_XADD_00
+		return "", false, ERR_STREAM_XADD_00
 	}
 
-	ms, seq, ok := parseStreamId(id)
-	if !ok || (ms == 0 && seq == 0) {
-		return false, ERR_STREAM_XADD_INVALID
+	// generate valid id
+	var ms, seq int64
+
+	// Fully auto-generated IDs
+	if id == "*" {
+		ms = time.Now().UnixMilli()
+		id = fmt.Sprintf("%d-0", ms)
+	} else {
+
+		parts := strings.Split(id, "-")
+		if len(parts) != 2 {
+			return "", false, ERR_STREAM_XADD_INVALID
+		}
+		if parts[0] == "" || parts[1] == "" {
+			return "", false, ERR_STREAM_XADD_INVALID
+		}
+		ms, err1 := strconv.ParseInt(parts[0], 10, 64)
+		if err1 != nil || ms < 0 {
+			return "", false, ERR_STREAM_XADD_INVALID
+		}
+
+		// Partially auto-generated IDs
+		if parts[1] == "*" {
+
+			for i := len(s.Items) - 1; i >= 0; i-- {
+				targetParts := strings.Split(s.Items[i].Id, "-")
+				if targetParts[0] == parts[0] {
+					targetSeq, _ := strconv.ParseInt(targetParts[1], 10, 64)
+					seq = targetSeq + 1
+					break
+				}
+			}
+
+		} else {
+			seq, err2 := strconv.ParseInt(parts[1], 10, 64)
+			// Check if both parts are valid integers and non-negative
+			if err2 != nil || seq < 0 {
+				return "", false, ERR_STREAM_XADD_INVALID
+			}
+		}
+	}
+
+	id = fmt.Sprintf("%d-%d", ms, seq)
+
+	// last stream id
+	lastId := ""
+	var lastMs, lastSeq int64
+
+	if len(s.Items) > 0 {
+		lastId = s.Items[len(s.Items)-1].Id
 	}
 	if lastId == "" {
-		// stream is empty
-		// 0-0 is not a valid stream ID, so we can only return true if ms > 0 or (ms == 0 && seq > 0)
-		return (ms > 0 || (ms == 0 && seq > 0)), ERR_STREAM_XADD_INVALID
+		return id, true, ""
+	} else {
+		lastParts := strings.Split(lastId, "-")
+		lastMs, _ = strconv.ParseInt(lastParts[0], 10, 64)
+		lastSeq, _ = strconv.ParseInt(lastParts[1], 10, 64)
 	}
 
-	lastMs, lastSeq, ok := parseStreamId(lastId)
-	if !ok {
-		return false, ERR_STREAM_XADD_INVALID
-	}
-
+	// compare
 	if ms > lastMs {
-		return true, ""
+		return id, true, ""
 	}
 	if ms == lastMs && seq > lastSeq {
-		return true, ""
+		return id, true, ""
 	}
 
-	return false, ERR_STREAM_XADD_INVALID
+	return "", false, ERR_STREAM_XADD_INVALID
 
 }
 func (s *SafeStream) Type(key string) (string, bool) {
@@ -476,21 +500,13 @@ func (s *SafeStream) XAdd(key string, id string, fields map[string]interface{}) 
 	}
 
 	// Create a new StreamItem with a unique ID
-	if id == "*" {
-		id = fmt.Sprintf("%d-%d", time.Now().UnixMilli(), len(s.m[key].Items))
-	} else {
-		lastId := ""
-		if len(stream.Items) > 0 {
-			lastId = stream.Items[len(stream.Items)-1].Id
-		}
-		ok, errStr := isValidStreamId(id, lastId)
-		if !ok {
-			return "", false, errStr
-		}
+	newValidId, ok, errStr := stream.NewValidStreamId(id)
+	if !ok {
+		return "", false, errStr
 	}
 
 	item := StreamItem{
-		Id:     id,
+		Id:     newValidId,
 		Fields: make(map[string]StreamElement),
 	}
 
@@ -499,7 +515,7 @@ func (s *SafeStream) XAdd(key string, id string, fields map[string]interface{}) 
 	}
 
 	stream.Items = append(stream.Items, item)
-	return id, true, ""
+	return newValidId, true, ""
 }
 
 // Ensures gofmt doesn't remove the "net" and "os" imports in stage 1 (feel free to remove this!)
@@ -554,8 +570,6 @@ func handleConnection(conn net.Conn) {
 	var err error
 	for scanner.Scan() {
 		text := scanner.Text()
-
-		fmt.Printf("Received: %q\n", text)
 
 		// Handle the command
 		text = strings.TrimSpace(text)
