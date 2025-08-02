@@ -581,7 +581,8 @@ func handleConnection(conn net.Conn) {
 		if strings.HasPrefix(text, "*") {
 
 			command_count, err = strconv.Atoi(text[1:])
-
+			fmt.Printf("%v\n", err)
+			fmt.Printf("%v\n", err.Error())
 			if err != nil {
 				conn.Write([]byte("-ERR invalid number of arguments\r\n"))
 				continue
