@@ -431,15 +431,12 @@ func (s *Stream) NewValidStreamId(id string) (string, bool, string) {
 			return "", false, ERR_STREAM_XADD_INVALID
 		}
 
-		fmt.Printf("parse ms from string: '%s' = %d\n", parts[0], ms)
 		// Partially auto-generated IDs
 		if parts[1] == "*" {
 
 			if parts[0] == "0" && len(s.Items) == 0 {
 				seq = 1
 			}
-
-			fmt.Printf("hello %d %d \n", ms, seq)
 
 			for i := len(s.Items) - 1; i >= 0; i-- {
 				targetParts := strings.Split(s.Items[i].Id, "-")
@@ -459,7 +456,6 @@ func (s *Stream) NewValidStreamId(id string) (string, bool, string) {
 		}
 	}
 	id = fmt.Sprintf("%d-%d", ms, seq)
-	fmt.Printf("parse ms from string: '%s' %d %d \n", id, ms, seq)
 
 	// last stream id
 	lastId := ""
