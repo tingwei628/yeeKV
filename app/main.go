@@ -602,7 +602,7 @@ func handleConnection(conn net.Conn) {
 			continue
 		}
 
-		if readBulkCommand {
+		if readBulkCommand && isReadFirstByte {
 			commands = append(commands, text)
 			readBulkCommand = false
 		}
