@@ -433,7 +433,7 @@ func (s *Stream) NewValidStreamId(id string) (string, bool, string) {
 		// Partially auto-generated IDs
 		if parts[1] == "*" {
 
-			if parts[0] == "0" {
+			if len(s.Items) == 0 {
 				seq = 1
 			}
 
