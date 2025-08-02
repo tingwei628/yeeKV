@@ -433,6 +433,10 @@ func (s *Stream) NewValidStreamId(id string) (string, bool, string) {
 		// Partially auto-generated IDs
 		if parts[1] == "*" {
 
+			if parts[0] == "0" {
+				seq = 1
+			}
+
 			for i := len(s.Items) - 1; i >= 0; i-- {
 				targetParts := strings.Split(s.Items[i].Id, "-")
 				if targetParts[0] == parts[0] {
