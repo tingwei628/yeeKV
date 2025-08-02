@@ -430,6 +430,7 @@ func (s *Stream) NewValidStreamId(id string) (string, bool, string) {
 			return "", false, ERR_STREAM_XADD_INVALID
 		}
 
+		fmt.Println("parse ms %d", ms)
 		// Partially auto-generated IDs
 		if parts[1] == "*" {
 
