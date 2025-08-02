@@ -609,8 +609,6 @@ func handleConnection(conn net.Conn) {
 
 		if len(commands) == command_count {
 
-			fmt.Printf("commands %v\n", commands)
-
 			switch strings.ToUpper(commands[0]) {
 			case "PING":
 				conn.Write([]byte("+PONG\r\n"))
