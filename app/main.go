@@ -454,9 +454,9 @@ func (s *Stream) NewValidStreamId(id string) (string, bool, string) {
 			}
 		}
 	}
-
 	id = fmt.Sprintf("%d-%d", ms, seq)
 
+	fmt.Println("id %s", id)
 	// last stream id
 	lastId := ""
 	var lastMs, lastSeq int64
