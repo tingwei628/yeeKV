@@ -411,6 +411,7 @@ func (s *Stream) NewValidStreamId(id string) (string, bool, string) {
 
 	// generate valid id
 	var ms, seq int64
+	var err error
 
 	// Fully auto-generated IDs
 	if id == "*" {
@@ -425,8 +426,8 @@ func (s *Stream) NewValidStreamId(id string) (string, bool, string) {
 		if parts[0] == "" || parts[1] == "" {
 			return "", false, ERR_STREAM_XADD_INVALID
 		}
-		ms, err1 := strconv.ParseInt(parts[0], 10, 64)
-		if err1 != nil || ms < 0 {
+		ms, err = strconv.ParseInt(parts[0], 10, 64)
+		if err != nil || ms < 0 {
 			return "", false, ERR_STREAM_XADD_INVALID
 		}
 
@@ -438,6 +439,8 @@ func (s *Stream) NewValidStreamId(id string) (string, bool, string) {
 				seq = 1
 			}
 
+			fmt.Printf("hello %d %d \n", ms, seq)
+
 			for i := len(s.Items) - 1; i >= 0; i-- {
 				targetParts := strings.Split(s.Items[i].Id, "-")
 				if targetParts[0] == parts[0] {
@@ -448,9 +451,9 @@ func (s *Stream) NewValidStreamId(id string) (string, bool, string) {
 			}
 
 		} else {
-			seq, err2 := strconv.ParseInt(parts[1], 10, 64)
+			seq, err = strconv.ParseInt(parts[1], 10, 64)
 			// Check if both parts are valid integers and non-negative
-			if err2 != nil || seq < 0 {
+			if err != nil || seq < 0 {
 				return "", false, ERR_STREAM_XADD_INVALID
 			}
 		}
