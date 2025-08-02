@@ -570,6 +570,7 @@ func handleConnection(conn net.Conn) {
 
 	var commands []string
 	var readBulkCommand bool
+	var isReadFirstByte bool
 	var command_count int
 	var err error
 	for scanner.Scan() {
@@ -577,8 +578,9 @@ func handleConnection(conn net.Conn) {
 
 		// Handle the command
 		text = strings.TrimSpace(text)
+		fmt.Printf("text %v\n", text)
 
-		if strings.HasPrefix(text, "*") {
+		if strings.HasPrefix(text, "*") && !isReadFirstByte {
 
 			command_count, err = strconv.Atoi(text[1:])
 			if err != nil {
@@ -592,6 +594,7 @@ func handleConnection(conn net.Conn) {
 				conn.Write([]byte("-ERR empty command\r\n"))
 				continue
 			}
+			isReadFirstByte = true
 			commands = make([]string, 0, command_count)
 
 		} else if strings.HasPrefix(text, "$") {
