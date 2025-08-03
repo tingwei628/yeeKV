@@ -589,6 +589,28 @@ func (s *SafeStream) XRange(key string, start, end string) ([]StreamItem, bool) 
 	return result, true
 }
 
+func toRespString(val interface{}) string {
+	switch v := val.(type) {
+	case string:
+		return v
+	case []byte:
+		return string(v)
+	case int:
+		return strconv.Itoa(v)
+	case int64:
+		return strconv.FormatInt(v, 10)
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64)
+	case bool:
+		if v {
+			return "1"
+		}
+		return "0"
+	default:
+		return fmt.Sprint(v) // fallback for unknown types
+	}
+}
+
 // Ensures gofmt doesn't remove the "net" and "os" imports in stage 1 (feel free to remove this!)
 var _ = net.Listen
 var _ = os.Exit
@@ -854,7 +876,7 @@ func handleConnection(conn net.Conn) {
 							// each item has key and value
 							stringBuilder.WriteString(fmt.Sprintf("*%d\r\n", len(item.Fields)*2))
 							for k, v := range item.Fields {
-								valStr := fmt.Sprintf("%v", v)
+								valStr := toRespString(v)
 								stringBuilder.WriteString(fmt.Sprintf("$%d\r\n%s\r\n", len(k), k))
 								stringBuilder.WriteString(fmt.Sprintf("$%d\r\n%s\r\n", len(valStr), valStr))
 							}
