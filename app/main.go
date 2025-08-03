@@ -246,7 +246,7 @@ func (s *SafeList) LPop(key string, popCount int) ([]string, bool) {
 	defer s.mu.Unlock()
 
 	m, ok := s.m[key]
-	var result []string
+	var result []string = []string{}
 
 	if ok && m.Len > 0 {
 
@@ -334,7 +334,7 @@ func (s *SafeList) LRange(key string, start, stop int) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	var result []string
+	var result []string = []string{}
 
 	m, ok := s.m[key]
 	if ok {
@@ -404,6 +404,24 @@ func (s *SafeList) Type(key string) (string, bool) {
 	return "", false
 }
 
+func parseStreamId(id string) (int64, int64, bool) {
+	parts := strings.Split(id, "-")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+
+	ms, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || ms < 0 {
+		return 0, 0, false
+	}
+
+	seq, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil || seq < 0 {
+		return 0, 0, false
+	}
+
+	return ms, seq, true
+}
 func (s *Stream) NewValidStreamId(id string) (string, bool, string) {
 	if id == "0-0" {
 		return "", false, ERR_STREAM_XADD_00
@@ -416,14 +434,10 @@ func (s *Stream) NewValidStreamId(id string) (string, bool, string) {
 	// Fully auto-generated IDs
 	if id == "*" {
 		ms = time.Now().UnixMilli()
-		id = fmt.Sprintf("%d-0", ms)
 	} else {
 
 		parts := strings.Split(id, "-")
-		if len(parts) != 2 {
-			return "", false, ERR_STREAM_XADD_INVALID
-		}
-		if parts[0] == "" || parts[1] == "" {
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 			return "", false, ERR_STREAM_XADD_INVALID
 		}
 		ms, err = strconv.ParseInt(parts[0], 10, 64)
@@ -434,10 +448,9 @@ func (s *Stream) NewValidStreamId(id string) (string, bool, string) {
 		// Partially auto-generated IDs
 		if parts[1] == "*" {
 
-			if parts[0] == "0" {
-				seq = 1
-			}
-
+			// if parts[0] == "0" {
+			// 	seq = 1
+			// }
 			for i := len(s.Items) - 1; i >= 0; i-- {
 				targetParts := strings.Split(s.Items[i].Id, "-")
 				if targetParts[0] == parts[0] {
@@ -445,6 +458,10 @@ func (s *Stream) NewValidStreamId(id string) (string, bool, string) {
 					seq = targetSeq + 1
 					break
 				}
+			}
+
+			if ms == 0 {
+				seq = 1
 			}
 
 		} else {
@@ -456,31 +473,41 @@ func (s *Stream) NewValidStreamId(id string) (string, bool, string) {
 		}
 	}
 	id = fmt.Sprintf("%d-%d", ms, seq)
-	fmt.Printf("%s\n", id)
 	// last stream id
-	lastId := ""
-	var lastMs, lastSeq int64
-
+	// lastId := ""
+	// var lastMs, lastSeq int64
 	if len(s.Items) > 0 {
-		lastId = s.Items[len(s.Items)-1].Id
-	}
-	if lastId == "" {
-		return id, true, ""
-	} else {
-		lastParts := strings.Split(lastId, "-")
-		lastMs, _ = strconv.ParseInt(lastParts[0], 10, 64)
-		lastSeq, _ = strconv.ParseInt(lastParts[1], 10, 64)
-	}
+		lastId := s.Items[len(s.Items)-1].Id
 
-	// compare
-	if ms > lastMs {
-		return id, true, ""
-	}
-	if ms == lastMs && seq > lastSeq {
-		return id, true, ""
-	}
+		lastMs, lastSeq, ok := parseStreamId(lastId)
 
-	return "", false, ERR_STREAM_XADD_INVALID
+		if !ok {
+			return "", false, ERR_STREAM_XADD_INVALID
+		}
+
+		if ms < lastMs || (ms == lastMs && seq <= lastSeq) {
+			return "", false, ERR_STREAM_XADD_INVALID
+		}
+	}
+	// if lastId == "" {
+	// 	return id, true, ""
+	// } else {
+	// 	lastParts := strings.Split(lastId, "-")
+	// 	lastMs, _ = strconv.ParseInt(lastParts[0], 10, 64)
+	// 	lastSeq, _ = strconv.ParseInt(lastParts[1], 10, 64)
+	// }
+
+	// // compare
+	// if ms > lastMs {
+	// 	return id, true, ""
+	// }
+	// if ms == lastMs && seq > lastSeq {
+	// 	return id, true, ""
+	// }
+
+	// return "", false, ERR_STREAM_XADD_INVALID
+
+	return id, true, ""
 
 }
 func (s *SafeStream) Type(key string) (string, bool) {
@@ -520,6 +547,46 @@ func (s *SafeStream) XAdd(key string, id string, fields map[string]interface{}) 
 
 	stream.Items = append(stream.Items, item)
 	return newValidId, true, ""
+}
+
+func (s *SafeStream) XRange(key string, start, end string) ([]StreamItem, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	stream, ok := s.m[key]
+	if !ok {
+		return nil, false
+	}
+
+	if start == "-" && len(stream.Items) > 0 {
+		start = stream.Items[0].Id
+	}
+
+	if end == "+" && len(stream.Items) > 0 {
+		end = stream.Items[len(stream.Items)-1].Id
+	}
+
+	startMs, startSeq, ok1 := parseStreamId(start)
+	endMs, endSeq, ok2 := parseStreamId(end)
+
+	if !ok1 || !ok2 {
+		return nil, false
+	}
+
+	var result []StreamItem = []StreamItem{}
+
+	for _, item := range stream.Items {
+		ms, seq, ok := parseStreamId(item.Id)
+		if !ok {
+			continue
+		}
+		// validate stream id
+		if (ms > startMs || (ms == startMs && seq >= startSeq)) &&
+			(ms < endMs || (ms == endMs && seq <= endSeq)) {
+			result = append(result, item)
+		}
+	}
+	return result, true
 }
 
 // Ensures gofmt doesn't remove the "net" and "os" imports in stage 1 (feel free to remove this!)
@@ -578,14 +645,11 @@ func handleConnection(conn net.Conn) {
 
 		// Handle the command
 		text = strings.TrimSpace(text)
-		fmt.Printf("text %v\n", text)
 
 		if strings.HasPrefix(text, "*") && !isReadFirstByte {
 
 			command_count, err = strconv.Atoi(text[1:])
 			if err != nil {
-				fmt.Printf("%v\n", err)
-				fmt.Printf("%v\n", err.Error())
 				conn.Write([]byte("-ERR invalid number of arguments\r\n"))
 				continue
 			}
@@ -775,6 +839,35 @@ func handleConnection(conn net.Conn) {
 					}
 				} else {
 					// conn.Write([]byte("-ERR wrong number of arguments for 'xadd' command\r\n"))
+				}
+			case "XRANGE":
+				if len(commands) == 4 {
+					items, ok := safeStream.XRange(commands[1], commands[2], commands[3])
+					if ok {
+						stringBuilder := strings.Builder{}
+						stringBuilder.WriteString(fmt.Sprintf("*%d\r\n", len(items)))
+
+						for _, item := range items {
+							stringBuilder.WriteString("*2\r\n")
+							stringBuilder.WriteString(fmt.Sprintf("$%d\r\n%s\r\n", len(item.Id), item.Id))
+
+							// each item has key and value
+							stringBuilder.WriteString(fmt.Sprintf("*%d\r\n", len(item.Fields)*2))
+							for k, v := range item.Fields {
+								valStr := fmt.Sprintf("%v", v)
+								stringBuilder.WriteString(fmt.Sprintf("$%d\r\n%s\r\n", len(k), k))
+								stringBuilder.WriteString(fmt.Sprintf("$%d\r\n%s\r\n", len(valStr), valStr))
+							}
+						}
+
+						conn.Write([]byte(stringBuilder.String()))
+
+					} else {
+						conn.Write([]byte("*0\r\n"))
+					}
+
+				} else {
+					// conn.Write([]byte("-ERR wrong number of arguments for 'xrange' command\r\n"))
 				}
 			default:
 				conn.Write([]byte("-ERR unknown command\r\n"))
