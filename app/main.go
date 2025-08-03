@@ -876,7 +876,7 @@ func handleConnection(conn net.Conn) {
 							// each item has key and value
 							stringBuilder.WriteString(fmt.Sprintf("*%d\r\n", len(item.Fields)*2))
 							for k, v := range item.Fields {
-								valStr := toRespString(v)
+								valStr := toRespString(v.Value)
 								stringBuilder.WriteString(fmt.Sprintf("$%d\r\n%s\r\n", len(k), k))
 								stringBuilder.WriteString(fmt.Sprintf("$%d\r\n%s\r\n", len(valStr), valStr))
 							}
