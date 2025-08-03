@@ -917,7 +917,7 @@ func handleConnection(conn net.Conn) {
 				}
 
 			case "XREAD":
-				if len(commands) >= 4 && strings.ToLower(commands[2]) == "streams" {
+				if len(commands) >= 4 && strings.ToLower(commands[1]) == "streams" {
 					streamCount := (len(commands) - 2) / 2
 					// streamCount = key-id pair
 					keys := commands[2 : 2+streamCount]
