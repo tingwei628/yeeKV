@@ -586,13 +586,33 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 	// timeout = 0 block without timeout
 	// timeout > 0 block with timeout
 
+	validIds := make([]string, len(ids))
+	s.mu.Lock()
+	for i, id := range ids {
+		if id == "$" {
+			// If the ID is '$', replace it with the current last ID of the stream.
+			stream, ok := s.m[keys[i]]
+			if ok && len(stream.Items) > 0 {
+				validIds[i] = stream.Items[len(stream.Items)-1].Id
+			} else {
+				// If the stream is empty or doesn't exist, start from the beginning.
+				validIds[i] = "0-0"
+			}
+		} else {
+			validIds[i] = id
+		}
+	}
+	s.mu.Unlock()
+
 	result := make(map[string][]StreamItem)
+	s.mu.Lock()
 	for i, key := range keys {
-		items, ok := s.XRange(key, incrementStreamId(ids[i], 1), "+")
+		items, ok := s.XRange(key, incrementStreamId(validIds[i], 1), "+")
 		if ok && len(items) > 0 {
 			result[key] = items
 		}
 	}
+	s.mu.Unlock()
 
 	if len(result) > 0 || timeout < 0 {
 		return result
@@ -619,7 +639,7 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 		// Check for data again inside the lock.
 		for i, key := range keys {
 			// Use the internal, non-locking version of XRange since we already hold the lock.
-			items, ok := s.xRangeHelper(key, incrementStreamId(ids[i], 1), "+")
+			items, ok := s.xRangeHelper(key, incrementStreamId(validIds[i], 1), "+")
 			if ok && len(items) > 0 {
 				result[key] = items
 			}
