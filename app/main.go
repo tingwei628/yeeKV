@@ -65,9 +65,8 @@ type SafeList struct {
 
 type SafeStream struct {
 	cond *sync.Cond
-	// conds map[string]*sync.Cond
-	mu sync.Mutex
-	m  map[string]*Stream
+	mu   sync.Mutex
+	m    map[string]*Stream
 }
 
 func NewSafeMap() *SafeMap {
@@ -87,7 +86,6 @@ func NewSafeStream() *SafeStream {
 		m: make(map[string]*Stream),
 	}
 	ss.cond = sync.NewCond(&ss.mu)
-	//ss.conds = make(map[string]*sync.Cond)
 	return ss
 }
 
@@ -459,9 +457,6 @@ func (s *Stream) NewValidStreamId(id string) (string, bool, string) {
 		// Partially auto-generated IDs
 		if parts[1] == "*" {
 
-			// if parts[0] == "0" {
-			// 	seq = 1
-			// }
 			for i := len(s.Items) - 1; i >= 0; i-- {
 				targetParts := strings.Split(s.Items[i].Id, "-")
 				if targetParts[0] == parts[0] {
@@ -484,9 +479,7 @@ func (s *Stream) NewValidStreamId(id string) (string, bool, string) {
 		}
 	}
 	id = fmt.Sprintf("%d-%d", ms, seq)
-	// last stream id
-	// lastId := ""
-	// var lastMs, lastSeq int64
+
 	if len(s.Items) > 0 {
 		lastId := s.Items[len(s.Items)-1].Id
 
@@ -500,24 +493,6 @@ func (s *Stream) NewValidStreamId(id string) (string, bool, string) {
 			return "", false, ERR_STREAM_XADD_INVALID
 		}
 	}
-	// if lastId == "" {
-	// 	return id, true, ""
-	// } else {
-	// 	lastParts := strings.Split(lastId, "-")
-	// 	lastMs, _ = strconv.ParseInt(lastParts[0], 10, 64)
-	// 	lastSeq, _ = strconv.ParseInt(lastParts[1], 10, 64)
-	// }
-
-	// // compare
-	// if ms > lastMs {
-	// 	return id, true, ""
-	// }
-	// if ms == lastMs && seq > lastSeq {
-	// 	return id, true, ""
-	// }
-
-	// return "", false, ERR_STREAM_XADD_INVALID
-
 	return id, true, ""
 
 }
@@ -559,9 +534,6 @@ func (s *SafeStream) XAdd(key string, id string, fields map[string]interface{}) 
 	stream.Items = append(stream.Items, item)
 
 	s.cond.Signal()
-	// if cond, ok := s.conds[key]; ok {
-	// 	cond.Signal()
-	// }
 
 	return newValidId, true, ""
 }
@@ -607,42 +579,7 @@ func (s *SafeStream) XRange(key string, start, end string) ([]StreamItem, bool) 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.xRangeHelper(key, start, end)
-	// stream, ok := s.m[key]
-	// if !ok {
-	// 	return nil, false
-	// }
-
-	// if start == "-" && len(stream.Items) > 0 {
-	// 	start = stream.Items[0].Id
-	// }
-
-	// if end == "+" && len(stream.Items) > 0 {
-	// 	end = stream.Items[len(stream.Items)-1].Id
-	// }
-
-	// startMs, startSeq, ok1 := parseStreamId(start)
-	// endMs, endSeq, ok2 := parseStreamId(end)
-
-	// var result []StreamItem = []StreamItem{}
-
-	// if !ok1 || !ok2 {
-	// 	return result, false
-	// }
-
-	// for _, item := range stream.Items {
-	// 	ms, seq, ok := parseStreamId(item.Id)
-	// 	if !ok {
-	// 		continue
-	// 	}
-	// 	// validate stream id
-	// 	if (ms > startMs || (ms == startMs && seq >= startSeq)) &&
-	// 		(ms < endMs || (ms == endMs && seq <= endSeq)) {
-	// 		result = append(result, item)
-	// 	}
-	// }
-	// return result, true
 }
-
 func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) map[string][]StreamItem {
 
 	// timeout < 0 no block
@@ -700,22 +637,7 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 
 		s.cond.Wait()
 	}
-
-	// // do not use lock/unlock to avoid deadlock since we use lock/unlock in xrange()
-	// result := make(map[string][]StreamItem)
-	// for i := 0; i < len(keys); i++ {
-	// 	key := keys[i]
-	// 	id := ids[i]
-
-	// 	// Read from id (exclusive), so pass it as start, and "+" as end
-	// 	items, ok := s.XRange(key, incrementStreamId(id, 1), "+")
-	// 	if ok && len(items) > 0 {
-	// 		result[key] = items
-	// 	}
-	// }
-	// return result
 }
-
 func toRespString(val interface{}) string {
 	switch v := val.(type) {
 	case string:
@@ -821,6 +743,8 @@ func handleConnection(conn net.Conn) {
 		}
 
 		if len(commands) == command_count {
+
+			fmt.Printf("commands %v\r\n", commands)
 
 			switch strings.ToUpper(commands[0]) {
 			case "PING":
@@ -1063,7 +987,6 @@ func handleConnection(conn net.Conn) {
 				// timeout = 0
 				result := safeStream.XRead(keys, ids, time.Duration(timeout*float64(time.Millisecond)))
 				if result == nil || len(result) == 0 {
-					//conn.Write([]byte("*0\r\n"))
 					conn.Write([]byte("$-1\r\n"))
 					continue
 				}
