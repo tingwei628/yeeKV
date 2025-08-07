@@ -582,6 +582,7 @@ func (s *SafeStream) XRange(key string, start, end string) ([]StreamItem, bool) 
 }
 func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) map[string][]StreamItem {
 
+	fmt.Printf("ids %v \r\n", ids)
 	// timeout < 0 no block
 	// timeout = 0 block without timeout
 	// timeout > 0 block with timeout
