@@ -761,8 +761,13 @@ func handleConnection(conn net.Conn) {
 			//["ECHO", "hey"]
 			//*2\r\n$4\r\nECHO\r\n$3\r\nhey\r\n
 			readBulkCommand = true
-			continue
+			if len(text) > 1 {
+				continue
+			}
 		}
+
+		// $1 應該跳過
+		// $  不應該跳過
 
 		if readBulkCommand && isReadFirstByte {
 			commands = append(commands, text)
@@ -977,7 +982,7 @@ func handleConnection(conn net.Conn) {
 				if strings.ToLower(commands[1]) == "block" {
 					if len(commands) < 4 {
 						conn.Write([]byte("-ERR syntax error\r\n"))
-						return
+						continue
 					}
 					// t, err := strconv.Atoi(commands[2])
 					timeout, err = strconv.ParseFloat(commands[2], 64)
