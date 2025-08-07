@@ -716,6 +716,7 @@ func handleConnection(conn net.Conn) {
 
 		// Handle the command
 		text = strings.TrimSpace(text)
+		fmt.Println(text)
 
 		if strings.HasPrefix(text, "*") && !isReadFirstByte {
 
@@ -733,6 +734,8 @@ func handleConnection(conn net.Conn) {
 			commands = make([]string, 0, command_count)
 
 		} else if strings.HasPrefix(text, "$") {
+			//["ECHO", "hey"]
+			//*2\r\n$4\r\nECHO\r\n$3\r\nhey\r\n
 			readBulkCommand = true
 			continue
 		}
