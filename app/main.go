@@ -64,6 +64,8 @@ type SafeList struct {
 }
 
 type SafeStream struct {
+	cond *sync.Cond
+	// conds map[string]*sync.Cond
 	mu sync.Mutex
 	m  map[string]*Stream
 }
@@ -81,9 +83,12 @@ func NewSafeList() *SafeList {
 	return sl
 }
 func NewSafeStream() *SafeStream {
-	return &SafeStream{
+	ss := &SafeStream{
 		m: make(map[string]*Stream),
 	}
+	ss.cond = sync.NewCond(&ss.mu)
+	//ss.conds = make(map[string]*sync.Cond)
+	return ss
 }
 
 func (s *SafeMap) Set(key string, value string, px int64) {
@@ -157,7 +162,6 @@ func (s *SafeList) RPush(key string, values ...string) int {
 				m.Tail = newItem
 			}
 			m.Len++
-			fmt.Println("RPush: ", key, value, m.Len)
 		}
 	} else {
 		// If the key does not exist, create a new list and add the values
@@ -553,12 +557,16 @@ func (s *SafeStream) XAdd(key string, id string, fields map[string]interface{}) 
 	}
 
 	stream.Items = append(stream.Items, item)
+
+	s.cond.Signal()
+	// if cond, ok := s.conds[key]; ok {
+	// 	cond.Signal()
+	// }
+
 	return newValidId, true, ""
 }
 
-func (s *SafeStream) XRange(key string, start, end string) ([]StreamItem, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (s *SafeStream) xRangeHelper(key string, start, end string) ([]StreamItem, bool) {
 
 	stream, ok := s.m[key]
 	if !ok {
@@ -595,22 +603,117 @@ func (s *SafeStream) XRange(key string, start, end string) ([]StreamItem, bool) 
 	}
 	return result, true
 }
+func (s *SafeStream) XRange(key string, start, end string) ([]StreamItem, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.xRangeHelper(key, start, end)
+	// stream, ok := s.m[key]
+	// if !ok {
+	// 	return nil, false
+	// }
 
-func (s *SafeStream) XRead(keys []string, ids []string) map[string][]StreamItem {
-	// do not use lock/unlock to avoid deadlock since we use lock/unlock in xrange()
+	// if start == "-" && len(stream.Items) > 0 {
+	// 	start = stream.Items[0].Id
+	// }
+
+	// if end == "+" && len(stream.Items) > 0 {
+	// 	end = stream.Items[len(stream.Items)-1].Id
+	// }
+
+	// startMs, startSeq, ok1 := parseStreamId(start)
+	// endMs, endSeq, ok2 := parseStreamId(end)
+
+	// var result []StreamItem = []StreamItem{}
+
+	// if !ok1 || !ok2 {
+	// 	return result, false
+	// }
+
+	// for _, item := range stream.Items {
+	// 	ms, seq, ok := parseStreamId(item.Id)
+	// 	if !ok {
+	// 		continue
+	// 	}
+	// 	// validate stream id
+	// 	if (ms > startMs || (ms == startMs && seq >= startSeq)) &&
+	// 		(ms < endMs || (ms == endMs && seq <= endSeq)) {
+	// 		result = append(result, item)
+	// 	}
+	// }
+	// return result, true
+}
+
+func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) map[string][]StreamItem {
+
+	// timeout < 0 no block
+	// timeout = 0 block without timeout
+	// timeout > 0 block with timeout
+
 	result := make(map[string][]StreamItem)
-
-	for i := 0; i < len(keys); i++ {
-		key := keys[i]
-		id := ids[i]
-
-		// Read from id (exclusive), so pass it as start, and "+" as end
-		items, ok := s.XRange(key, incrementStreamId(id, 1), "+")
+	for i, key := range keys {
+		items, ok := s.XRange(key, incrementStreamId(ids[i], 1), "+")
 		if ok && len(items) > 0 {
 			result[key] = items
 		}
 	}
-	return result
+
+	if len(result) > 0 || timeout < 0 {
+		return result
+	}
+
+	var (
+		ctx    context.Context = context.Background()
+		cancel context.CancelFunc
+	)
+
+	if timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	go func() {
+		<-ctx.Done() // Block until context is cancelled by timeout or defer cancel().
+		s.cond.Signal()
+	}()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for {
+		// Check for data again inside the lock.
+		for i, key := range keys {
+			// Use the internal, non-locking version of XRange since we already hold the lock.
+			items, ok := s.xRangeHelper(key, incrementStreamId(ids[i], 1), "+")
+			if ok && len(items) > 0 {
+				result[key] = items
+			}
+		}
+
+		// If we found data for any key, we are done.
+		if len(result) > 0 {
+			return result
+		}
+
+		// If no data, check if the context was cancelled (i.e., we timed out).
+		if ctx.Err() != nil {
+			return nil // Timed out.
+		}
+
+		s.cond.Wait()
+	}
+
+	// // do not use lock/unlock to avoid deadlock since we use lock/unlock in xrange()
+	// result := make(map[string][]StreamItem)
+	// for i := 0; i < len(keys); i++ {
+	// 	key := keys[i]
+	// 	id := ids[i]
+
+	// 	// Read from id (exclusive), so pass it as start, and "+" as end
+	// 	items, ok := s.XRange(key, incrementStreamId(id, 1), "+")
+	// 	if ok && len(items) > 0 {
+	// 		result[key] = items
+	// 	}
+	// }
+	// return result
 }
 
 func toRespString(val interface{}) string {
@@ -915,51 +1018,81 @@ func handleConnection(conn net.Conn) {
 				} else {
 					// conn.Write([]byte("-ERR wrong number of arguments for 'xrange' command\r\n"))
 				}
-
 			case "XREAD":
-				if len(commands) >= 4 && strings.ToLower(commands[1]) == "streams" {
-					streamCount := (len(commands) - 2) / 2
-					// streamCount = key-id pair
-					keys := commands[2 : 2+streamCount]
-					ids := commands[2+streamCount:]
-					if len(keys) != len(ids) {
-						conn.Write([]byte("-ERR wrong number of key and Ids for 'xread' command\r\n"))
+
+				var timeout float64
+				var streamIndex = 1
+
+				if strings.ToLower(commands[1]) == "block" {
+					if len(commands) < 4 {
+						conn.Write([]byte("-ERR syntax error\r\n"))
+						return
+					}
+					// t, err := strconv.Atoi(commands[2])
+					timeout, err = strconv.ParseFloat(commands[2], 64)
+					if err != nil || timeout < 0 {
+						conn.Write([]byte("-ERR invalid timeout\r\n"))
 						continue
 					}
-					result := safeStream.XRead(keys, ids)
-					if len(result) == 0 {
-						conn.Write([]byte("*0\r\n"))
-						continue
-					}
-
-					stringBuilder := strings.Builder{}
-					stringBuilder.WriteString(fmt.Sprintf("*%d\r\n", len(result))) // top-level array
-
-					for _, key := range keys {
-						items, ok := result[key]
-						if !ok {
-							continue
-						}
-						stringBuilder.WriteString("*2\r\n")                                    // key + items
-						stringBuilder.WriteString(fmt.Sprintf("$%d\r\n%s\r\n", len(key), key)) // key
-
-						stringBuilder.WriteString(fmt.Sprintf("*%d\r\n", len(items))) // entries
-						for _, item := range items {
-							stringBuilder.WriteString("*2\r\n") // id + field-value array
-							stringBuilder.WriteString(fmt.Sprintf("$%d\r\n%s\r\n", len(item.Id), item.Id))
-							stringBuilder.WriteString(fmt.Sprintf("*%d\r\n", len(item.Fields)*2))
-							for k, v := range item.Fields {
-								valStr := toRespString(v.Value)
-								stringBuilder.WriteString(fmt.Sprintf("$%d\r\n%s\r\n", len(k), k))
-								stringBuilder.WriteString(fmt.Sprintf("$%d\r\n%s\r\n", len(valStr), valStr))
-							}
-						}
-					}
-					conn.Write([]byte(stringBuilder.String()))
-
+					streamIndex = 3
 				} else {
-					// conn.Write([]byte("-ERR wrong number of arguments for 'xread' command\r\n"))
+					// no block
+					timeout = -1
 				}
+
+				if len(commands) <= streamIndex || strings.ToLower(commands[streamIndex]) != "streams" {
+					conn.Write([]byte("-ERR syntax error missing streams\r\n"))
+					continue
+				}
+
+				streamIndex++
+				streamCount := (len(commands) - streamIndex) / 2
+
+				if (len(commands)-streamIndex)%2 != 0 || streamCount == 0 {
+					conn.Write([]byte("-ERR wrong number of arguments for 'xread'\r\n"))
+					continue
+				}
+
+				keys := commands[streamIndex : streamIndex+streamCount]
+				ids := commands[streamIndex+streamCount:]
+				if len(keys) != len(ids) {
+					conn.Write([]byte("-ERR wrong number of key and Ids for 'xread' command\r\n"))
+					continue
+				}
+
+				// timeout = 0
+				result := safeStream.XRead(keys, ids, time.Duration(timeout*float64(time.Millisecond)))
+				if result == nil || len(result) == 0 {
+					//conn.Write([]byte("*0\r\n"))
+					conn.Write([]byte("$-1\r\n"))
+					continue
+				}
+
+				stringBuilder := strings.Builder{}
+				stringBuilder.WriteString(fmt.Sprintf("*%d\r\n", len(result))) // top-level array
+
+				for _, key := range keys {
+					items, ok := result[key]
+					if !ok {
+						continue
+					}
+					stringBuilder.WriteString("*2\r\n")                                    // key + items
+					stringBuilder.WriteString(fmt.Sprintf("$%d\r\n%s\r\n", len(key), key)) // key
+
+					stringBuilder.WriteString(fmt.Sprintf("*%d\r\n", len(items))) // entries
+					for _, item := range items {
+						stringBuilder.WriteString("*2\r\n") // id + field-value array
+						stringBuilder.WriteString(fmt.Sprintf("$%d\r\n%s\r\n", len(item.Id), item.Id))
+						stringBuilder.WriteString(fmt.Sprintf("*%d\r\n", len(item.Fields)*2))
+						for k, v := range item.Fields {
+							valStr := toRespString(v.Value)
+							stringBuilder.WriteString(fmt.Sprintf("$%d\r\n%s\r\n", len(k), k))
+							stringBuilder.WriteString(fmt.Sprintf("$%d\r\n%s\r\n", len(valStr), valStr))
+						}
+					}
+				}
+				conn.Write([]byte(stringBuilder.String()))
+
 			default:
 				conn.Write([]byte("-ERR unknown command\r\n"))
 			}
