@@ -602,6 +602,9 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 			validIds[i] = id
 		}
 	}
+
+	fmt.Printf("validIds %v \r\n", validIds)
+
 	s.mu.Unlock()
 
 	result := make(map[string][]StreamItem)
