@@ -679,8 +679,8 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 	// 	return nil // 返回 nil 表示超時
 	// }
 
-	validIds := make([]string, len(ids))
 	s.mu.Lock()
+	validIds := make([]string, len(ids))
 	for i, id := range ids {
 		if id == "$" {
 			// If the ID is '$', replace it with the current last ID of the stream.
@@ -695,10 +695,7 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 			validIds[i] = id
 		}
 	}
-	s.mu.Unlock()
-
 	result := make(map[string][]StreamItem)
-	s.mu.Lock()
 	for i, key := range keys {
 		items, ok := s.XRange(key, incrementStreamId(validIds[i], 1), "+")
 		if ok && len(items) > 0 {
@@ -718,6 +715,9 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 		ctx    context.Context = context.Background()
 		cancel context.CancelFunc
 	)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	if timeout > 0 {
 		ctx, cancel = context.WithTimeout(ctx, timeout)
@@ -739,34 +739,13 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 		}()
 	}
 
-	/*
-		if timeout > 0 {
-			ctx, cancel = context.WithTimeout(context.Background(), timeout)
-			defer cancel()
-
-			done := make(chan struct{})
-			defer close(done)
-			go func() {
-				select {
-				// Wait for the context to be done or the timeout to expire
-				case <-ctx.Done():
-					// If the context is done, signal the condition variable to wake up the waiting goroutine
-					s.cond.Signal()
-				// Avoid goroutine leak
-				case <-done:
-					return
-				}
-			}()
-		}
-	*/
-
 	// go func() {
 	// 	<-ctx.Done() // Block until context is cancelled by timeout or defer cancel().
 	// 	s.cond.Broadcast()
 	// }()
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	// s.mu.Lock()
+	// defer s.mu.Unlock()
 
 	for {
 		// Check for data again inside the lock.
