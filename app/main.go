@@ -611,6 +611,11 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 	result := make(map[string][]StreamItem)
 	s.mu.Lock()
 	for i, key := range keys {
+
+		if ids[i] == "$" {
+			continue
+		}
+
 		items, ok := s.XRange(key, incrementStreamId(validIds[i], 1), "+")
 		if ok && len(items) > 0 {
 			result[key] = items
