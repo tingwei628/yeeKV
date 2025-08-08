@@ -727,13 +727,16 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 		defer close(done)
 
 		go func() {
+			fmt.Println("before <-ctx.Done")
 			select {
 			// Wait for the context to be done or the timeout to expire
 			case <-ctx.Done():
+				fmt.Println("after <-ctx.Done")
 				// If the context is done, signal the condition variable to wake up the waiting goroutine
 				s.cond.Broadcast()
 			// Avoid goroutine leak
 			case <-done:
+				fmt.Println("after <-done")
 				return
 			}
 		}()
@@ -759,15 +762,18 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 
 		// If we found data for any key, we are done.
 		if len(result) > 0 {
+			fmt.Println("after len(result) > 0 in for")
 			return result
 		}
 
 		// If no data, check if the context was cancelled (i.e., we timed out).
 		if ctx.Err() != nil {
+			fmt.Println("after ctx.Err() in for")
 			return nil // Timed out.
 		}
-
+		fmt.Println("before cond.Wait")
 		s.cond.Wait()
+		fmt.Println("after cond.Wait")
 	}
 }
 func toRespString(val interface{}) string {
