@@ -587,80 +587,172 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 	// timeout = 0 block without timeout
 	// timeout > 0 block with timeout
 
-	validIds := make([]string, len(ids))
-	s.mu.Lock()
-	for i, id := range ids {
-		if id == "$" {
-			// If the ID is '$', replace it with the current last ID of the stream.
-			stream, ok := s.m[keys[i]]
-			if ok && len(stream.Items) > 0 {
-				validIds[i] = stream.Items[len(stream.Items)-1].Id
-			} else {
-				// If the stream is empty or doesn't exist, start from the beginning.
-				validIds[i] = "0-0"
-			}
-		} else {
-			validIds[i] = id
-		}
-	}
-
-	fmt.Printf("validIds %v \r\n", validIds)
-
-	s.mu.Unlock()
-
-	result := make(map[string][]StreamItem)
-	s.mu.Lock()
-	for i, key := range keys {
-		items, ok := s.XRange(key, incrementStreamId(validIds[i], 1), "+")
-		if ok && len(items) > 0 {
-			result[key] = items
-		}
-	}
-	s.mu.Unlock()
-
-	if len(result) > 0 || timeout < 0 {
-		return result
-	}
-
-	var (
-		ctx    context.Context = context.Background()
-		cancel context.CancelFunc
-	)
-
-	if timeout > 0 {
-		ctx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
-	}
-	go func() {
-		<-ctx.Done() // Block until context is cancelled by timeout or defer cancel().
-		s.cond.Broadcast()
-	}()
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for {
-		// Check for data again inside the lock.
+	if timeout < 0 {
+		// 對於非阻塞情況，我們快速檢查一次。
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		result := make(map[string][]StreamItem)
 		for i, key := range keys {
-			// Use the internal, non-locking version of XRange since we already hold the lock.
-			items, ok := s.xRangeHelper(key, incrementStreamId(validIds[i], 1), "+")
+			// 非阻塞時，$ 沒有意義，將其視為從頭開始。
+			startId := ids[i]
+			if startId == "$" {
+				startId = "0-0"
+			}
+			items, ok := s.xRangeHelper(key, incrementStreamId(startId, 1), "+")
 			if ok && len(items) > 0 {
 				result[key] = items
 			}
 		}
-
-		// If we found data for any key, we are done.
 		if len(result) > 0 {
 			return result
 		}
+		return nil
+	}
 
-		// If no data, check if the context was cancelled (i.e., we timed out).
-		if ctx.Err() != nil {
-			return nil // Timed out.
+	// --- 1. 設置超時和結果通道 ---
+	ctx := context.Background()
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+	}
+
+	resultChan := make(chan map[string][]StreamItem, 1)
+
+	// --- 2. 啟動「等待者」goroutine ---
+	go func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		// 在 goroutine 內部解析 '$' ID，確保與等待操作在同一個鎖內。
+		effectiveIds := make([]string, len(ids))
+		for i, id := range ids {
+			if id == "$" {
+				stream, ok := s.m[keys[i]]
+				if ok && len(stream.Items) > 0 {
+					effectiveIds[i] = stream.Items[len(stream.Items)-1].Id
+				} else {
+					effectiveIds[i] = "0-0"
+				}
+			} else {
+				effectiveIds[i] = id
+			}
 		}
 
-		s.cond.Wait()
+		// 主等待迴圈
+		for {
+			// 檢查是否有新資料
+			result := make(map[string][]StreamItem)
+			for i, key := range keys {
+				items, ok := s.xRangeHelper(key, incrementStreamId(effectiveIds[i], 1), "+")
+				if ok && len(items) > 0 {
+					result[key] = items
+				}
+			}
+
+			// 如果找到資料，發送到 channel 並結束 goroutine
+			if len(result) > 0 {
+				resultChan <- result
+				return
+			}
+
+			// 在等待前，檢查是否已經超時，以避免不必要的等待
+			if ctx.Err() != nil {
+				// 不要發送任何東西，直接退出 goroutine
+				return
+			}
+
+			// 等待信號
+			s.cond.Wait()
+		}
+	}()
+
+	// --- 3. 等待結果或超時 ---
+	select {
+	case res := <-resultChan:
+		// 成功從等待者那裡收到了結果
+		return res
+	case <-ctx.Done():
+		// 超時發生。我們需要喚醒可能還在等待的 goroutine，讓它退出。
+		// 使用 Broadcast 以確保在複雜情況下所有等待者都能被喚醒。
+		s.cond.Broadcast()
+		return nil // 返回 nil 表示超時
 	}
+
+	// validIds := make([]string, len(ids))
+	// s.mu.Lock()
+	// for i, id := range ids {
+	// 	if id == "$" {
+	// 		// If the ID is '$', replace it with the current last ID of the stream.
+	// 		stream, ok := s.m[keys[i]]
+	// 		if ok && len(stream.Items) > 0 {
+	// 			validIds[i] = stream.Items[len(stream.Items)-1].Id
+	// 		} else {
+	// 			// If the stream is empty or doesn't exist, start from the beginning.
+	// 			validIds[i] = "0-0"
+	// 		}
+	// 	} else {
+	// 		validIds[i] = id
+	// 	}
+	// }
+
+	// fmt.Printf("validIds %v \r\n", validIds)
+
+	// s.mu.Unlock()
+
+	// result := make(map[string][]StreamItem)
+	// s.mu.Lock()
+	// for i, key := range keys {
+	// 	items, ok := s.XRange(key, incrementStreamId(validIds[i], 1), "+")
+	// 	if ok && len(items) > 0 {
+	// 		result[key] = items
+	// 	}
+	// }
+	// s.mu.Unlock()
+
+	// if len(result) > 0 || timeout < 0 {
+	// 	return result
+	// }
+
+	// var (
+	// 	ctx    context.Context = context.Background()
+	// 	cancel context.CancelFunc
+	// )
+
+	// if timeout > 0 {
+	// 	ctx, cancel = context.WithTimeout(ctx, timeout)
+	// 	defer cancel()
+	// }
+	// go func() {
+	// 	<-ctx.Done() // Block until context is cancelled by timeout or defer cancel().
+	// 	s.cond.Broadcast()
+	// }()
+
+	// s.mu.Lock()
+	// defer s.mu.Unlock()
+
+	// for {
+	// 	// Check for data again inside the lock.
+	// 	for i, key := range keys {
+	// 		// Use the internal, non-locking version of XRange since we already hold the lock.
+	// 		items, ok := s.xRangeHelper(key, incrementStreamId(validIds[i], 1), "+")
+	// 		if ok && len(items) > 0 {
+	// 			result[key] = items
+	// 		}
+	// 	}
+
+	// 	// If we found data for any key, we are done.
+	// 	if len(result) > 0 {
+	// 		return result
+	// 	}
+
+	// 	// If no data, check if the context was cancelled (i.e., we timed out).
+	// 	if ctx.Err() != nil {
+	// 		return nil // Timed out.
+	// 	}
+
+	// 	s.cond.Wait()
+	// }
 }
 func toRespString(val interface{}) string {
 	switch v := val.(type) {
