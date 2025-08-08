@@ -731,7 +731,7 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 			// Wait for the context to be done or the timeout to expire
 			case <-ctx.Done():
 				// If the context is done, signal the condition variable to wake up the waiting goroutine
-				s.cond.Signal()
+				s.cond.Broadcast()
 			// Avoid goroutine leak
 			case <-done:
 				return
