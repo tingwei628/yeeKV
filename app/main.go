@@ -695,6 +695,9 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 			validIds[i] = id
 		}
 	}
+
+	fmt.Printf("validIds %v\r\n", validIds)
+
 	result := make(map[string][]StreamItem)
 	for i, key := range keys {
 		items, ok := s.XRange(key, incrementStreamId(validIds[i], 1), "+")
@@ -703,6 +706,8 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 		}
 	}
 	s.mu.Unlock()
+
+	fmt.Printf("result %v\r\n", result)
 
 	if timeout < 0 {
 		if len(result) > 0 {
