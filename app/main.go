@@ -680,7 +680,7 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 	case <-ctx.Done():
 		// 超時發生。我們需要喚醒可能還在等待的 goroutine，讓它退出。
 		// 使用 Broadcast 以確保在複雜情況下所有等待者都能被喚醒。
-		s.cond.Broadcast()
+		s.cond.Signal()
 		fmt.Println("s.cond.Broadcast()")
 		return nil // 返回 nil 表示超時
 	}
