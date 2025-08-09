@@ -720,10 +720,6 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 			result[key] = items
 		}
 	}
-	// fmt.Println("XRead 1 before s.mu.Unlock()")
-	// s.mu.Unlock()
-	// fmt.Println("XRead 1 after s.mu.Unlock()")
-	fmt.Printf("result %v\r\n", result)
 
 	if timeout < 0 {
 		if len(result) > 0 {
@@ -745,7 +741,7 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 		select {
 		case <-ctx.Done():
 			fmt.Println("inside ctx Done")
-			s.cond.Broadcast()
+			s.cond.Signal()
 			fmt.Println("inside ctx after")
 		case <-done:
 			return
@@ -769,18 +765,14 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 
 		// If we found data for any key, we are done.
 		if len(result) > 0 {
-			fmt.Println("after len(result) > 0 in for")
 			return result
 		}
 
 		// If no data, check if the context was cancelled (i.e., we timed out).
 		if ctx.Err() != nil {
-			fmt.Println("after ctx.Err() in for")
 			return nil // Timed out.
 		}
-		fmt.Println("before cond.Wait")
 		s.cond.Wait()
-		fmt.Println("after cond.Wait")
 	}
 }
 func toRespString(val interface{}) string {
