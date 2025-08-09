@@ -679,6 +679,7 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 	// 	return nil // 返回 nil 表示超時
 	// }
 
+	////////////////////////////////
 	s.mu.Lock()
 	validIds := make([]string, len(ids))
 	for i, id := range ids {
@@ -695,6 +696,7 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 			validIds[i] = id
 		}
 	}
+	s.mu.Unlock()
 
 	fmt.Printf("validIds %v\r\n", validIds)
 
@@ -705,8 +707,6 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 			result[key] = items
 		}
 	}
-	s.mu.Unlock()
-
 	fmt.Printf("result %v\r\n", result)
 
 	if timeout < 0 {
@@ -716,44 +716,20 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 		return nil
 	}
 
-	var (
-		ctx    context.Context = context.Background()
-		cancel context.CancelFunc
-	)
+	if timeout == 0 && len(result) > 0 {
+		return result
+	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	ctx := context.Background()
+	var cancel context.CancelFunc
 
 	if timeout > 0 {
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
-
-		done := make(chan struct{})
-		defer close(done)
-
-		go func() {
-			fmt.Println("before <-ctx.Done")
-			select {
-			// Wait for the context to be done or the timeout to expire
-			case <-ctx.Done():
-				fmt.Println("after <-ctx.Done")
-				// If the context is done, signal the condition variable to wake up the waiting goroutine
-				s.cond.Broadcast()
-			// Avoid goroutine leak
-			case <-done:
-				fmt.Println("after <-done")
-				return
-			}
-		}()
 	}
 
-	// go func() {
-	// 	<-ctx.Done() // Block until context is cancelled by timeout or defer cancel().
-	// 	s.cond.Broadcast()
-	// }()
-
-	// s.mu.Lock()
-	// defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	for {
 		// Check for data again inside the lock.
