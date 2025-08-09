@@ -728,7 +728,9 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 	go func() {
 		select {
 		case <-ctx.Done():
-			s.cond.Signal()
+			s.mu.Lock()
+			s.cond.Broadcast()
+			s.mu.Unlock()
 		case <-done:
 			return
 		}
