@@ -584,115 +584,11 @@ func (s *SafeStream) XRange(key string, start, end string) ([]StreamItem, bool) 
 }
 func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) map[string][]StreamItem {
 
-	fmt.Printf("ids %v \r\n", ids)
 	// timeout < 0 no block
 	// timeout = 0 block without timeout
 	// timeout > 0 block with timeout
 
-	// if timeout < 0 {
-	// 	// 對於非阻塞情況，我們快速檢查一次。
-	// 	s.mu.Lock()
-	// 	defer s.mu.Unlock()
-	// 	result := make(map[string][]StreamItem)
-	// 	for i, key := range keys {
-	// 		// 非阻塞時，$ 沒有意義，將其視為從頭開始。
-	// 		startId := ids[i]
-	// 		if startId == "$" {
-	// 			startId = "0-0"
-	// 		}
-	// 		items, ok := s.xRangeHelper(key, incrementStreamId(startId, 1), "+")
-	// 		if ok && len(items) > 0 {
-	// 			result[key] = items
-	// 		}
-	// 	}
-	// 	if len(result) > 0 {
-	// 		return result
-	// 	}
-	// 	return nil
-	// }
-
-	// // --- 1. 設置超時和結果通道 ---
-	// ctx := context.Background()
-	// if timeout > 0 {
-	// 	var cancel context.CancelFunc
-	// 	ctx, cancel = context.WithTimeout(context.Background(), timeout)
-	// 	defer cancel()
-	// }
-
-	// resultChan := make(chan map[string][]StreamItem, 1)
-
-	// // --- 2. 啟動「等待者」goroutine ---
-	// go func() {
-	// 	fmt.Println("go func before s.mu.Lock()")
-	// 	s.mu.Lock()
-	// 	defer s.mu.Unlock()
-	// 	fmt.Println("go func after s.mu.Lock()")
-
-	// 	// 在 goroutine 內部解析 '$' ID，確保與等待操作在同一個鎖內。
-	// 	effectiveIds := make([]string, len(ids))
-	// 	for i, id := range ids {
-	// 		if id == "$" {
-	// 			stream, ok := s.m[keys[i]]
-	// 			if ok && len(stream.Items) > 0 {
-	// 				effectiveIds[i] = stream.Items[len(stream.Items)-1].Id
-	// 			} else {
-	// 				effectiveIds[i] = "0-0"
-	// 			}
-	// 		} else {
-	// 			effectiveIds[i] = id
-	// 		}
-	// 	}
-
-	// 	// 主等待迴圈
-	// 	for {
-	// 		// 檢查是否有新資料
-	// 		result := make(map[string][]StreamItem)
-	// 		for i, key := range keys {
-	// 			items, ok := s.xRangeHelper(key, incrementStreamId(effectiveIds[i], 1), "+")
-	// 			if ok && len(items) > 0 {
-	// 				result[key] = items
-	// 			}
-	// 		}
-
-	// 		// 如果找到資料，發送到 channel 並結束 goroutine
-	// 		if len(result) > 0 {
-	// 			fmt.Println("resultChan <- result")
-	// 			resultChan <- result
-	// 			return
-	// 		}
-
-	// 		// 在等待前，檢查是否已經超時，以避免不必要的等待
-	// 		if ctx.Err() != nil {
-	// 			// 不要發送任何東西，直接退出 goroutine
-	// 			fmt.Println("ctx.Err() != nil")
-	// 			return
-	// 		}
-
-	// 		// 等待信號
-	// 		fmt.Println("before s.cond.Wait")
-	// 		s.cond.Wait()
-	// 		fmt.Println("after s.cond.Wait")
-	// 	}
-	// }()
-
-	// fmt.Println("before select")
-	// // --- 3. 等待結果或超時 ---
-	// select {
-	// case res := <-resultChan:
-	// 	// 成功從等待者那裡收到了結果
-	// 	fmt.Println("res := <-resultChan")
-	// 	return res
-	// case <-ctx.Done():
-	// 	// 超時發生。我們需要喚醒可能還在等待的 goroutine，讓它退出。
-	// 	// 使用 Broadcast 以確保在複雜情況下所有等待者都能被喚醒。
-	// 	s.cond.Signal()
-	// 	fmt.Println("s.cond.Broadcast()")
-	// 	return nil // 返回 nil 表示超時
-	// }
-	////////////////////////////////
-	fmt.Println("XRead 1 before s.mu.Lock() lock")
 	s.mu.Lock()
-	fmt.Println("XRead 1 after s.mu.Lock() lock")
 	validIds := make([]string, len(ids))
 	for i, id := range ids {
 		if id == "$" {
@@ -709,10 +605,7 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 		}
 	}
 
-	fmt.Printf("validIds %v\r\n", validIds)
-	fmt.Println("XRead 1 before s.mu.Unlock()")
 	s.mu.Unlock()
-	fmt.Println("XRead 1 after s.mu.Unlock()")
 	result := make(map[string][]StreamItem)
 	for i, key := range keys {
 		// XRange has mutexes
@@ -729,7 +622,6 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 		return nil
 	}
 
-	// ctx, cancel := context.WithCancel(context.Background())
 	ctx := context.Background()
 	var cancel context.CancelFunc
 	if timeout > 0 {
@@ -742,18 +634,14 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 	go func() {
 		select {
 		case <-ctx.Done():
-			fmt.Println("inside ctx Done")
 			s.cond.Signal()
-			fmt.Println("inside ctx after")
 		case <-done:
 			return
 		}
 	}()
 
-	fmt.Println("XRead 2 bfefore s.mu.Lock()")
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	fmt.Println("XRead 2 after s.mu.Lock()")
 
 	for {
 		// Check for data again inside the lock.
