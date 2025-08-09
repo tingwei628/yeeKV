@@ -716,16 +716,12 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 		return nil
 	}
 
-	ctx := context.Background()
-	var cancel context.CancelFunc
-
+	ctx, cancel := context.WithCancel(context.Background())
 	if timeout > 0 {
 		ctx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer cancel()
 
 	done := make(chan struct{})
 	defer close(done)
@@ -737,6 +733,9 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 			return
 		}
 	}()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	for {
 		// Check for data again inside the lock.
