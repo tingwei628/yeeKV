@@ -858,7 +858,7 @@ func handleConnection(conn net.Conn) {
 
 		// Handle the command
 		text = strings.TrimSpace(text)
-		fmt.Println(text)
+		// fmt.Println(text)
 
 		if strings.HasPrefix(text, "*") && !isReadFirstByte {
 
