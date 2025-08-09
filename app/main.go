@@ -507,10 +507,8 @@ func (s *SafeStream) Type(key string) (string, bool) {
 }
 
 func (s *SafeStream) XAdd(key string, id string, fields map[string]interface{}) (string, bool, string) {
-	fmt.Println("XAdd before s.mu.Lock() lock")
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	fmt.Println("XAdd after s.mu.Lock() lock")
 
 	stream, ok := s.m[key]
 	if !ok {
