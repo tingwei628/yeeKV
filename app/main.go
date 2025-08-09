@@ -687,7 +687,9 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 	// 	return nil // 返回 nil 表示超時
 	// }
 	////////////////////////////////
+	fmt.Println("XRead 1 before s.mu.Lock() lock")
 	s.mu.Lock()
+	fmt.Println("XRead 1 after s.mu.Lock() lock")
 	validIds := make([]string, len(ids))
 	for i, id := range ids {
 		if id == "$" {
@@ -713,8 +715,9 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 			result[key] = items
 		}
 	}
-
+	fmt.Println("XRead 1 before s.mu.Unlock()")
 	s.mu.Unlock()
+	fmt.Println("XRead 1 after s.mu.Unlock()")
 	fmt.Printf("result %v\r\n", result)
 
 	if timeout < 0 {
@@ -744,10 +747,10 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 		}
 	}()
 
-	fmt.Println("2 bfefore s.mu.Lock()")
+	fmt.Println("XRead 2 bfefore s.mu.Lock()")
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	fmt.Println("2 after s.mu.Lock()")
+	fmt.Println("XRead 2 after s.mu.Lock()")
 
 	for {
 		// Check for data again inside the lock.
