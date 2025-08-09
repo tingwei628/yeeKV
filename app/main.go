@@ -728,25 +728,28 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 		return nil
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	// ctx, cancel := context.WithCancel(context.Background())
+	ctx := context.Background()
+	var cancel context.CancelFunc
 	if timeout > 0 {
 		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
 	}
 
-	defer cancel()
+	// defer cancel()
 
-	done := make(chan struct{})
-	defer close(done)
-	go func() {
-		select {
-		case <-ctx.Done():
-			fmt.Println("inside ctx Done")
-			s.cond.Signal()
-			fmt.Println("inside ctx after")
-		case <-done:
-			return
-		}
-	}()
+	// done := make(chan struct{})
+	// defer close(done)
+	// go func() {
+	// 	select {
+	// 	case <-ctx.Done():
+	// 		fmt.Println("inside ctx Done")
+	// 		s.cond.Signal()
+	// 		fmt.Println("inside ctx after")
+	// 	case <-done:
+	// 		return
+	// 	}
+	// }()
 
 	fmt.Println("XRead 2 bfefore s.mu.Lock()")
 	s.mu.Lock()
