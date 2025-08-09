@@ -715,6 +715,7 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 	fmt.Println("XRead 1 after s.mu.Unlock()")
 	result := make(map[string][]StreamItem)
 	for i, key := range keys {
+		// XRange has mutexes
 		items, ok := s.XRange(key, incrementStreamId(validIds[i], 1), "+")
 		if ok && len(items) > 0 {
 			result[key] = items
@@ -736,20 +737,18 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 		defer cancel()
 	}
 
-	// defer cancel()
-
-	// done := make(chan struct{})
-	// defer close(done)
-	// go func() {
-	// 	select {
-	// 	case <-ctx.Done():
-	// 		fmt.Println("inside ctx Done")
-	// 		s.cond.Signal()
-	// 		fmt.Println("inside ctx after")
-	// 	case <-done:
-	// 		return
-	// 	}
-	// }()
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			fmt.Println("inside ctx Done")
+			s.cond.Signal()
+			fmt.Println("inside ctx after")
+		case <-done:
+			return
+		}
+	}()
 
 	fmt.Println("XRead 2 bfefore s.mu.Lock()")
 	s.mu.Lock()
