@@ -1,3 +1,3 @@
-module github.com/codecrafters-io/redis-starter-go
+module github.com/tingwei628/yeeKV
 
 go 1.24.0
