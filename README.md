@@ -1,11 +1,10 @@
-<p align="center">
-  <img src="yeeKV_logo_512.png" alt="yeeKV Logo" width="200"/>
+# yeeKV
+> A lightweight Redis-like key-value store written in Go.
+
+<p align="left">
+  <img src="yeeKV_logo_512.png" alt="yeeKV Logo" width="512"/>
 </p>
 
-
-# yeeKV
-
-**yeeKV** is a lightweight Redis-like key-value store written in Go.
 
 
 ## Features
