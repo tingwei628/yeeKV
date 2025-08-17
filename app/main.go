@@ -10,6 +10,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"strconv"
@@ -105,7 +106,6 @@ func (s *SafeMap) Set(key string, value string, px int64) {
 		}
 	}
 }
-
 func (s *SafeMap) Get(key string) (string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -125,7 +125,6 @@ func (s *SafeMap) Get(key string) (string, bool) {
 	}
 	return "", false
 }
-
 func (s *SafeMap) Type(key string) (string, bool) {
 	_, ok := s.Get(key) // Ensure the key is checked for expiry
 	if ok {
@@ -133,7 +132,6 @@ func (s *SafeMap) Type(key string) (string, bool) {
 	}
 	return "", false // Key does not exist or has expired
 }
-
 func (s *SafeList) RPush(key string, values ...string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -192,7 +190,6 @@ func (s *SafeList) RPush(key string, values ...string) int {
 
 	return m.Len
 }
-
 func (s *SafeList) LPush(key string, values ...string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -331,7 +328,6 @@ func (s *SafeList) BLPop(key string, timeout time.Duration) (string, bool) {
 	}
 
 }
-
 func (s *SafeList) LRange(key string, start, stop int) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -385,7 +381,6 @@ func (s *SafeList) LRange(key string, start, stop int) []string {
 	return result
 
 }
-
 func (s *SafeList) LLen(key string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -396,7 +391,6 @@ func (s *SafeList) LLen(key string) int {
 	}
 	return 0 // Return 0 if the key does not exist
 }
-
 func (s *SafeList) Type(key string) (string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -405,7 +399,6 @@ func (s *SafeList) Type(key string) (string, bool) {
 	}
 	return "", false
 }
-
 func parseStreamId(id string) (int64, int64, bool) {
 	parts := strings.Split(id, "-")
 	if len(parts) != 2 {
@@ -663,6 +656,33 @@ func (s *SafeStream) XRead(keys []string, ids []string, timeout time.Duration) m
 		s.cond.Wait()
 	}
 }
+
+func (s *SafeMap) Incr(key string) (int64, bool, string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	val, ok := s.m[key]
+
+	var num int64
+	var err error
+	if !ok {
+		s.m[key] = Element{Value: "1"}
+		return 1, true, ""
+	}
+
+	num, err = strconv.ParseInt(val.Value, 10, 64)
+	if err != nil {
+		return 0, false, "value is not an integer or out of range"
+	}
+
+	if num == math.MaxInt64 {
+		return 0, false, "value is not an integer or out of range"
+	}
+
+	num++
+	s.m[key] = Element{Value: strconv.FormatInt(num, 10)}
+	return num, true, ""
+}
+
 func toRespString(val interface{}) string {
 	switch v := val.(type) {
 	case string:
@@ -1048,7 +1068,18 @@ func handleConnection(conn net.Conn) {
 					}
 				}
 				conn.Write([]byte(stringBuilder.String()))
-
+			case "INCR":
+				if len(commands) == 2 {
+					key := commands[1]
+					newVal, ok, errStr := safeMap.Incr(key)
+					if ok {
+						conn.Write([]byte(fmt.Sprintf(":%d\r\n", newVal)))
+					} else {
+						conn.Write([]byte(fmt.Sprintf("-ERR %s\r\n", errStr)))
+					}
+				} else {
+					// conn.Write([]byte("-ERR wrong number of arguments for 'incr' command\r\n"))
+				}
 			default:
 				conn.Write([]byte("-ERR unknown command\r\n"))
 			}
