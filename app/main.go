@@ -22,21 +22,6 @@ var _ = os.Exit
 // var safeList *datastore.SafeList
 // var safeStream *datastore.SafeStream
 
-// const NEVER_EXPIRED = -1
-
-// type Server struct {
-// 	safeMap    *datastore.SafeMap
-// 	safeList   *datastore.SafeList
-// 	safeStream *datastore.SafeStream
-// }
-
-//	func NewServer() *Server {
-//		return &Server{
-//			safeMap:    datastore.NewSafeMap(),
-//			safeList:   datastore.NewSafeList(),
-//			safeStream: datastore.NewSafeStream(),
-//		}
-//	}
 func main() {
 	// You can use print statements as follows for debugging, they'll be visible when running tests.
 	// fmt.Println("Logs from your program will appear here!")
